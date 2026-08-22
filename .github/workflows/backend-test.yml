@@ -18,6 +18,6 @@ jobs:
 
       - name: Check backend
         env:
-          PYTHONPATH: ${{ github.workspace }}  
+          PYTHONPATH: ${{ github.workspace }}
         run: python -c "import main"
         working-directory: ./backend
