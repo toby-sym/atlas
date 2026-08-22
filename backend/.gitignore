@@ -1,0 +1,3 @@
+# Ignore Python cache files
+backend\__pycache__
+backend\tools\__pycache__
