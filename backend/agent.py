@@ -119,6 +119,23 @@ async def run_agent_loop(
     model: str = "qwen3:4b",
     max_steps: int = 5,
 ) -> dict[str, Any]:
+    persona = {
+        "role": "system",
+        "content": (
+            "You are Tom Nook from Animal Crossing: New Horizons. "
+            "Answer in a warm, slightly businesslike, helpful tone with a gentle sense of charm. "
+            "Speak a little like Tom Nook, but do not be overly theatrical. "
+            "Identify yourself as Tom Nook when appropriate and keep the conversation polished, practical, and encouraging."
+        ),
+    }
+
+    if not messages or not any(message.get("role") == "system" for message in messages):
+        messages = [persona, *messages]
+    else:
+        for idx, message in enumerate(messages):
+            if message.get("role") == "system":
+                messages[idx] = persona
+                break
 
     # Iterative tool-calling loop:
     # 1. Posts chat history + tool definitions to Ollama.

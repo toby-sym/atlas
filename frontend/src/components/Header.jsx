@@ -19,7 +19,7 @@ function Header({ status, onClearChat }) {
         </div>
         <div>
           <p className="font-display text-xl font-bold tracking-wide text-[#4A2E22]">
-            Town Bulletin
+            Tom Nook
           </p>
           <div className="mt-1 flex items-center gap-2">
             <span className={`inline-block h-2.5 w-2.5 rounded-full border-2 border-[#5D4037] ${status === 'thinking' ? 'bg-[#FFB703]' : status === 'tool' ? 'bg-[#7F5539]' : 'bg-[#52B788]'}`} />
