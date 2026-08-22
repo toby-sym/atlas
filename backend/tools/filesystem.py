@@ -1,5 +1,5 @@
 import os
-from agent import register_tool
+from backend.agent import register_tool
 
 # Defining a safe root directory for file operations to prevent access outside the intended workspace.
 SAFE_ROOT = os.path.abspath("./workspace")
