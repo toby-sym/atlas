@@ -3,3 +3,5 @@ uvicorn[standard]
 httpx
 pyyaml
 pydantic
+beautifulsoup4
+ddgs
