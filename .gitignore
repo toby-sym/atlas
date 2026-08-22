@@ -5,3 +5,9 @@ workspace/
 # Ignore Python bytecode files and cache
 *.pyc
 *.pyd
+
+# Tauri and PyInstaller output
+src-tauri/target/
+src-tauri/binaries/*.exe
+build/
+dist/
