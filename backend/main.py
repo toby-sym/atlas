@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.agent import run_agent_loop
+from agent import run_agent_loop
 
 # Import tool modules from /backend/tools to ensure they are registered with the agent.
 import backend.tools.filesystem
