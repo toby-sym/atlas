@@ -1,23 +1,40 @@
-name: Pylint
+name: Lint & Format
 
 on: [push]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Grants permissions to commit auto-fixes back to the branch
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.10", "3.11", "3.12"]
+
     steps:
     - uses: actions/checkout@v4
+
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pylint
+        pip install pylint ruff
+
+    - name: Auto-fix and format with Ruff
+      run: |
+        ruff check --fix .
+        ruff format .
+
+    - name: Commit Ruff fixes
+      if: matrix.python-version == '3.12' # Ensures only one matrix job pushes commits
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "style: auto-fix with ruff"
+
     - name: Analysing the code with pylint
       run: |
         pylint $(git ls-files '*.py')
