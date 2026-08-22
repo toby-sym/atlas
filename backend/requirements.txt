@@ -4,4 +4,4 @@ httpx
 pyyaml
 pydantic
 beautifulsoup4
-duckduckgo-search
+ddgs

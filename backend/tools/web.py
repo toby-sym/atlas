@@ -1,8 +1,8 @@
 import logging
 from typing import Any, Dict, List
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
-from duckduckgo_search.exceptions import DuckDuckGoSearchException
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def search_web(query: str, max_results: int = 5) -> List[Dict[str, str]]:
                     }
                 )
         return results
-    except DuckDuckGoSearchException as e:
+    except DDGSException as e:
         logger.error("DuckDuckGo search failed for query '%s': %s", query, e)
         return []
 
