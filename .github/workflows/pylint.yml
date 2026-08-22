@@ -23,6 +23,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pylint ruff
+        pip install -r backend/requirements.txt
 
     - name: Auto-fix and format with Ruff
       run: |
