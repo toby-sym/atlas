@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = Path("backend/data/memory.db")
 
+
 # Connects to SQLite DB and ensures the memories table exists.
 def _get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -24,6 +25,7 @@ def _get_db() -> sqlite3.Connection:
     )
     return conn
 
+
 # Saves a key-value pair in the persistent memory database, optionally categorizing it. If the key already exists, it updates the value and timestamp.
 def save_memory(key: str, value: str, category: str = "general") -> str:
     try:
@@ -40,6 +42,7 @@ def save_memory(key: str, value: str, category: str = "general") -> str:
     except sqlite3.Error as e:
         logger.error("Failed to save memory for '%s': %s", key, e)
         return f"Error saving memory: {e}"
+
 
 # Recall memories from DB
 def recall_memory(query: str = "") -> List[Dict[str, Any]]:
