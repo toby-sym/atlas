@@ -15,6 +15,7 @@ HEADERS = {
     )
 }
 
+
 # This module provides web-related tools for the agent
 def search_web(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     # Performs a web search using DuckDuckGo and returns a list of search results.
@@ -35,6 +36,7 @@ def search_web(query: str, max_results: int = 5) -> List[Dict[str, str]]:
         logger.error("DuckDuckGo search failed for query '%s': %s", query, e)
         return []
 
+
 # Asynchronous function to scrape a web page and extract clean text content.
 async def scrape_url(url: str, max_chars: int = 4000) -> Dict[str, Any]:
     # Performs an HTTP GET request to the specified URL, parses the HTML content, and extracts clean text while removing non-content elements. Returns a dictionary with the URL, HTTP status, and extracted content (truncated to max_chars).
@@ -48,7 +50,9 @@ async def scrape_url(url: str, max_chars: int = 4000) -> Dict[str, Any]:
             soup = BeautifulSoup(response.text, "html.parser")
 
             # Strip non-content tags
-            for element in soup(["script", "style", "nav", "header", "footer", "noscript"]):
+            for element in soup(
+                ["script", "style", "nav", "header", "footer", "noscript"]
+            ):
                 element.decompose()
 
             # Extract clean text
