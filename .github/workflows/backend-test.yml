@@ -2,13 +2,18 @@ name: Backend Test Workflow
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - run: pip install -r requirements.txt
+        working-directory: ./backend
+
       - run: pytest
+        working-directory: ./backend
