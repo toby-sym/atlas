@@ -59,6 +59,49 @@ class ToolRegistry:
 # Global registry instance
 registry = ToolRegistry()
 
+from tools.web import scrape_url, search_web
+
+# Register DuckDuckGo Web Search
+registry.register(
+    name="search_web",
+    description="Search DuckDuckGo for live web results, documentation, or news.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query string.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of search results to return (default: 5).",
+            },
+        },
+        "required": ["query"],
+    },
+    func=search_web,
+)
+
+# Register HTML Web Scraper
+registry.register(
+    name="scrape_url",
+    description="Fetch and extract clean plain text content from a web page URL.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "The web page URL to scrape.",
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "Maximum characters of text to return (default: 4000).",
+            },
+        },
+        "required": ["url"],
+    },
+    func=scrape_url,
+)
 
 # Function decorator to register a tool with the global registry.
 def register_tool(name: str, description: str, parameters: dict[str, Any]):
