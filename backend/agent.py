@@ -1,9 +1,10 @@
 import inspect
 import json
-import httpx
 import logging
 from collections.abc import Callable
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger("nook.agent")
 

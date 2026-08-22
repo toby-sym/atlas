@@ -69,6 +69,5 @@ async def chat(request: ChatRequest):
         return ChatResponse(message=assistant_message)
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
-            detail=f"Agent execution error: {e!s}"
+            status_code=500, detail=f"Agent execution error: {e!s}"
         ) from e
