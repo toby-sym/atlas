@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from agent import run_agent_loop
 
 # Import tool modules from /backend/tools to ensure they are registered with the agent.
-import backend.tools.filesystem
+import tools.filesystem
 
 # Defining the FastAPI application instance for the Nook API.
 app = FastAPI(title="Nook API", version="0.1.0")
