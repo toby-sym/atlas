@@ -1,6 +1,5 @@
-model:
-  name: "qwen3:4b"
-  endpoint: http://localhost:11434/api/generate
+ollama_url: "http://localhost:11434/v1/chat/completions"
+model: "qwen3:4b"
 
 tools:
   filesystem:
