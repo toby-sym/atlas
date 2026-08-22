@@ -35,5 +35,5 @@ def read_file(path: str) -> str:
     try:
         with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
             return f.read()
-    except Exception as e:
+    except (OSError, UnicodeDecodeError) as e:
         return f"Error reading file: {e!s}"

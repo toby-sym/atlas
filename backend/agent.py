@@ -1,10 +1,9 @@
 import inspect
 import json
+import httpx
 import logging
 from collections.abc import Callable
 from typing import Any
-
-import httpx
 
 logger = logging.getLogger("nook.agent")
 
@@ -51,7 +50,7 @@ class ToolRegistry:
             if isinstance(result, (dict, list)):
                 return json.dumps(result)
             return str(result)
-        except Exception as e:
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError) as e:
             logger.error(f"Execution error in tool '{name}': {e}", exc_info=True)
             return f"Error executing tool '{name}': {e!s}"
 
