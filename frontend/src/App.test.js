@@ -3,6 +3,6 @@ import App from './App';
 
 test('renders the Atlas chat shell', () => {
   render(<App />);
-  expect(screen.getByText(/ATLAS/i)).toBeInTheDocument();
+  expect(screen.getByText('ATLAS')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /clear session/i })).toBeInTheDocument();
 });
