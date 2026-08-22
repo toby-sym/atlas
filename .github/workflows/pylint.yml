@@ -15,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -29,7 +31,7 @@ jobs:
 
       - name: Auto-fix and format with Ruff
         run: |
-          ruff check --fix --exit-zero .
+          ruff check --select E,F,W --fix --exit-zero .
           ruff format .
 
       - name: Commit Ruff fixes
