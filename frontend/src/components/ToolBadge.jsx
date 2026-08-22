@@ -1,12 +1,12 @@
 function ToolBadge({ label, tone = 'green' }) {
   const toneClass = {
-    green: 'bg-[#DFF7E8] text-[#2E6B4A] border-[#76C893]',
-    yellow: 'bg-[#FFF0B8] text-[#7A5A00] border-[#FFB703]',
-    wood: 'bg-[#F2E6D9] text-[#5D4037] border-[#7F5539]',
-  }[tone] || 'bg-[#DFF7E8] text-[#2E6B4A] border-[#76C893]';
+    green: 'bg-emerald-400/10 text-emerald-200 border-emerald-300/40',
+    sky: 'bg-sky-400/10 text-sky-100 border-sky-300/40',
+    slate: 'bg-slate-400/10 text-slate-200 border-slate-500/40',
+  }[tone] || 'bg-emerald-400/10 text-emerald-200 border-emerald-300/40';
 
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border-2 px-3 py-1.5 text-xs font-semibold shadow-[0_3px_0_rgba(93,64,55,0.25)] ${toneClass}`}>
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium tracking-wide shadow-[0_8px_20px_rgba(2,6,23,0.35)] ${toneClass}`}>
       {label}
     </span>
   );

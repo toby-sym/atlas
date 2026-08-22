@@ -72,8 +72,9 @@ function MessageBubble({ message }) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end pb-4">
-        <div className="max-w-[80%] rounded-[1.75rem] rounded-br-md border-4 border-[#5D4037] bg-[#BFE8D3] px-4 py-3 text-[#2B3D35] shadow-[0_6px_0_#5D4037]">
+      <div className="flex justify-end pb-4 animate-message-enter">
+        <div className="max-w-[82%] rounded-2xl rounded-br-md border border-blue-300/20 bg-gradient-to-br from-blue-500/20 to-sky-500/10 px-4 py-3 text-slate-100 shadow-[0_16px_40px_rgba(14,116,255,0.16)] backdrop-blur-sm">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-100/90">You</div>
           <div>{content}</div>
         </div>
       </div>
@@ -81,11 +82,11 @@ function MessageBubble({ message }) {
   }
 
   return (
-    <div className="flex justify-start pb-4">
-      <div className="max-w-[82%] rounded-[1.75rem] rounded-bl-md border-4 border-[#5D4037] bg-[#FAF6E9] px-4 py-3 text-[#3E2E28] shadow-[0_6px_0_#5D4037]">
+    <div className="flex justify-start pb-4 animate-message-enter">
+      <div className="max-w-[84%] rounded-2xl rounded-bl-md border border-slate-700/90 bg-slate-900/82 px-4 py-3 text-slate-100 shadow-[0_18px_45px_rgba(2,6,23,0.55)] backdrop-blur-sm">
         <div className="mb-2 flex items-center gap-2">
-          <span className="rounded-full border-2 border-[#5D4037] bg-[#FFE89C] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#5D4037]">
-            Tom Nook
+          <span className="rounded-full border border-sky-400/40 bg-sky-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-100">
+            Atlas
           </span>
         </div>
         <div>{content}</div>

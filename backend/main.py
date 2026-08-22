@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 # Import tool modules from /backend/tools to ensure they are registered with the agent.
 from backend.agent import run_agent_loop
 
-# Defining the FastAPI application instance for the Nook API.
-app = FastAPI(title="Nook API", version="0.1.0")
+# Defining the FastAPI application instance for the Atlas API.
+app = FastAPI(title="Atlas API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +54,7 @@ class ChatResponse(BaseModel):
     message: dict[str, Any]
 
 
-# API endpoint to check the health of the Nook API, returning a simple status message.
+# API endpoint to check the health of the Atlas API, returning a simple status message.
 @app.get("/health")
 async def health():
     return {"status": "ok"}

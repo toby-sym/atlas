@@ -7,7 +7,7 @@ import httpx
 from backend.tools.web import scrape_url, search_web
 
 
-logger = logging.getLogger("nook.agent")
+logger = logging.getLogger("atlas.agent")
 
 
 # ToolRegistry manages the registration and execution of tools (functions) that can be called by the agent.
@@ -122,10 +122,11 @@ async def run_agent_loop(
     persona = {
         "role": "system",
         "content": (
-            "You are Tom Nook from Animal Crossing: New Horizons. "
-            "Answer in a warm, slightly businesslike, helpful tone with a gentle sense of charm. "
-            "Speak a little like Tom Nook, but do not be overly theatrical. "
-            "Identify yourself as Tom Nook when appropriate and keep the conversation polished, practical, and encouraging."
+            "You are Atlas, an executive-grade personal AI assistant with a calm, precise, and proactive tone. "
+            "Your style is inspired by a high-end operations copilot: concise, confident, and solutions-focused. "
+            "Prioritize clarity, structure, and actionable next steps. "
+            "When useful, briefly acknowledge risks, assumptions, and trade-offs. "
+            "Identify yourself as Atlas when asked who you are."
         ),
     }
 

@@ -9,18 +9,18 @@ function getToolStatusFromPrompt(prompt) {
   const lower = prompt.toLowerCase();
 
   if (/search|look up|find|google|web|browse|docs/.test(lower)) {
-    return '🔍 Searching web...';
+    return 'Scanning live sources...';
   }
 
   if (/memory|remember|recall|save|note/.test(lower)) {
-    return '🍃 Recalled memory...';
+    return 'Reviewing memory context...';
   }
 
   if (/file|folder|read|write|filesystem|open/.test(lower)) {
-    return '📁 Filesystem operation...';
+    return 'Running file operations...';
   }
 
-  return '🧭 Preparing response...';
+  return 'Planning response strategy...';
 }
 
 function App() {
@@ -48,8 +48,9 @@ function App() {
     setInput('');
     setError('');
     setLoading(true);
-    setStatus('thinking');
-    setToolStatus(getToolStatusFromPrompt(trimmed));
+    const predictedToolStatus = getToolStatusFromPrompt(trimmed);
+    setToolStatus(predictedToolStatus);
+    setStatus(predictedToolStatus ? 'tool' : 'thinking');
 
     try {
       const response = await fetch(API_URL, {
@@ -70,7 +71,7 @@ function App() {
     } catch (err) {
       setStatus('online');
       setError(err.message || 'Unable to reach the backend agent.');
-      setMessages((current) => [...current, { role: 'assistant', content: 'The agent seems to be offline right now. Please try again in a moment.' }]);
+      setMessages((current) => [...current, { role: 'assistant', content: 'Atlas is currently unavailable. Please retry in a moment.' }]);
     } finally {
       setLoading(false);
       setToolStatus('');
@@ -91,8 +92,13 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F3ECE0] p-4 font-[Fredoka,sans-serif] text-[#3E2E28] md:p-8">
-      <div className="mx-auto flex max-w-5xl flex-col overflow-hidden rounded-[2rem] border-[6px] border-[#5D4037] bg-[#FAF6E9] shadow-[0_12px_0_#5D4037]">
+    <div className="app-shell min-h-screen p-4 text-slate-100 md:p-8">
+      <div className="pointer-events-none fixed inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(37,99,235,0.28),transparent_36%),radial-gradient(circle_at_86%_10%,rgba(56,189,248,0.18),transparent_34%),linear-gradient(180deg,#04060C_0%,#060B15_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:34px_34px] opacity-30" />
+      </div>
+
+      <div className="animate-panel-enter relative mx-auto flex max-w-6xl flex-col overflow-hidden rounded-[1.6rem] border border-slate-800/90 bg-slate-950/80 shadow-[0_30px_90px_rgba(2,6,23,0.65)] backdrop-blur-xl">
         <Header status={loading ? 'thinking' : status} onClearChat={clearChat} />
 
         <div ref={scrollRef} className="max-h-[70vh] min-h-[500px] overflow-y-auto">
@@ -100,7 +106,7 @@ function App() {
         </div>
 
         {error && (
-          <div className="border-t-4 border-[#5D4037] bg-[#FFE1D7] px-4 py-3 text-sm font-semibold text-[#6B2F20]">
+          <div className="border-t border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
             {error}
           </div>
         )}
