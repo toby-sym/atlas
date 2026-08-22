@@ -103,6 +103,7 @@ registry.register(
     func=scrape_url,
 )
 
+
 # Function decorator to register a tool with the global registry.
 def register_tool(name: str, description: str, parameters: dict[str, Any]):
     def decorator(func: Callable):
