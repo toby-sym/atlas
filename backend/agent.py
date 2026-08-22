@@ -56,13 +56,17 @@ class ToolRegistry:
             logger.error(f"Execution error in tool '{name}': {e}", exc_info=True)
             return f"Error executing tool '{name}': {e!s}"
 
+
 # Context window manager to keep system prompt and last N messages
-def prune_messages(messages: list[dict[str, Any]], max_history: int = 10) -> list[dict[str, Any]]:
+def prune_messages(
+    messages: list[dict[str, Any]], max_history: int = 10
+) -> list[dict[str, Any]]:
     if len(messages) <= max_history + 1:
         return messages
     system_msgs = [m for m in messages if m.get("role") == "system"]
     recent_msgs = messages[-max_history:]
     return system_msgs + recent_msgs
+
 
 # Global registry instance
 registry = ToolRegistry()
@@ -150,6 +154,7 @@ registry.register(
     func=recall_memory,
 )
 
+
 # Function decorator to register a tool with the global registry.
 def register_tool(name: str, description: str, parameters: dict[str, Any]):
     def decorator(func: Callable):
@@ -222,11 +227,7 @@ async def run_agent_loop(
                 fn_name = fn["name"]
 
                 raw_args = fn.get("arguments", "{}")
-                args = (
-                    json.loads(raw_args)
-                    if isinstance(raw_args, str)
-                    else raw_args
-                )
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
 
                 logger.info(
                     f"[Step {step}] Executing tool '{fn_name}' with args {args}"
