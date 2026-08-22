@@ -1,0 +1,8 @@
+# Local workspace for testing environment for nook
+workspace/
+.venv
+
+# Ignore Python bytecode files and cache
+*.pyc
+backend\__pycache__
+

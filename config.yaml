@@ -1,5 +1,5 @@
 model:
-  name: "Hermes-3-Llama-3.1-8B"
+  name: "qwen3:4b"
   endpoint: http://localhost:11434/api/generate
 
 tools:
