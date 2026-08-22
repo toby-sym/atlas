@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 
+
 class MemoryStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -23,7 +24,7 @@ class MemoryStore:
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO conversations (timestamp, input, output) VALUES (?, ?, ?)",
-            (datetime.now().isoformat(), input_text, output_text)
+            (datetime.now().isoformat(), input_text, output_text),
         )
         self.conn.commit()
 
