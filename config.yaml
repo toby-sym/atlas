@@ -1,0 +1,21 @@
+model:
+  name: "Hermes-3-Llama-3.1-8B"
+  endpoint: http://localhost:11434/api/generate
+
+tools:
+  filesystem:
+    enabled: true
+    path: "./"
+  web_search:
+    enabled: false
+    api_key: "YOUR_TAVILY_API_KEY"
+  calendar:
+    enabled: false
+    credentials:
+      type: "google"
+      client_id: ""
+      client_secret: ""
+
+memory:
+  type: sqlite
+  path: "./memory.db"
