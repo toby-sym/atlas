@@ -27,10 +27,7 @@ def _resolve_path(relative_path: str) -> str:
 # Function to read the contents of a file given its relative path
 def read_file(path: str) -> str:
     try:
-        target = _resolve_path(path)
-        if not os.path.exists(target):
-            return f"File '{path}' does not exist."
-        with open(target, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
             return f.read()
     except Exception as e:
         return f"Error reading file: {str(e)}"
