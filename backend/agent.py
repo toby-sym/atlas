@@ -3,7 +3,7 @@ import json
 import logging
 from collections.abc import Callable
 from typing import Any
-
+from backend.tools.web import scrape_url, search_web
 import httpx
 
 logger = logging.getLogger("nook.agent")
@@ -58,8 +58,6 @@ class ToolRegistry:
 
 # Global registry instance
 registry = ToolRegistry()
-
-from tools.web import scrape_url, search_web
 
 # Register DuckDuckGo Web Search
 registry.register(
