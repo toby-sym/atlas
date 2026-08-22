@@ -3,13 +3,22 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # Import tool modules from /backend/tools to ensure they are registered with the agent.
 from backend.agent import run_agent_loop
 
-# Defining the FastAPI application instance for the Nook API.
-app = FastAPI(title="Nook API", version="0.1.0")
+# Defining the FastAPI application instance for the Atlas API.
+app = FastAPI(title="Atlas API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # Function to load config settings from a YAML file, defaulting to "config.yaml" if not specified in the environment.
@@ -45,7 +54,7 @@ class ChatResponse(BaseModel):
     message: dict[str, Any]
 
 
-# API endpoint to check the health of the Nook API, returning a simple status message.
+# API endpoint to check the health of the Atlas API, returning a simple status message.
 @app.get("/health")
 async def health():
     return {"status": "ok"}

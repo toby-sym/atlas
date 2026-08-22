@@ -7,7 +7,7 @@ import httpx
 from backend.tools.web import scrape_url, search_web
 from backend.tools.memory import recall_memory, save_memory
 
-logger = logging.getLogger("nook.agent")
+logger = logging.getLogger("atlas.agent")
 
 
 # ToolRegistry manages the registration and execution of tools (functions) that can be called by the agent.
@@ -171,6 +171,24 @@ async def run_agent_loop(
     model: str = "qwen3:4b",
     max_steps: int = 5,
 ) -> dict[str, Any]:
+    persona = {
+        "role": "system",
+        "content": (
+            "You are Atlas, an executive-grade personal AI assistant with a calm, precise, and proactive tone. "
+            "Your style is inspired by a high-end operations copilot: concise, confident, and solutions-focused. "
+            "Prioritize clarity, structure, and actionable next steps. "
+            "When useful, briefly acknowledge risks, assumptions, and trade-offs. "
+            "Identify yourself as Atlas when asked who you are."
+        ),
+    }
+
+    if not messages or not any(message.get("role") == "system" for message in messages):
+        messages = [persona, *messages]
+    else:
+        for idx, message in enumerate(messages):
+            if message.get("role") == "system":
+                messages[idx] = persona
+                break
 
     # Iterative tool-calling loop:
     # 1. Posts pruned chat history + tool definitions to Ollama.

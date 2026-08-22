@@ -1,10 +1,7 @@
-# Local workspace for testing environment for nook
+# Local workspace for testing environment for Atlas
 workspace/
 .venv
 
 # Ignore Python bytecode files and cache
 *.pyc
-backend\__pycache__
-backend\tools\__pycache__
-backend\data
-backend\data\memory.db
+*.pyd
