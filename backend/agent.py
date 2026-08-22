@@ -57,7 +57,7 @@ class ToolRegistry:
 
 
 # Global registry instance
-registry = ToolRegistry()
+registry = ToolRegistry()               
 
 
 # Function decorator to register a tool with the global registry.
