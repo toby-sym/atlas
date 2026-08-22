@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 import httpx
 from backend.tools.web import scrape_url, search_web
-
+from backend.tools.memory import recall_memory, save_memory
 
 logger = logging.getLogger("atlas.agent")
 
@@ -57,6 +57,17 @@ class ToolRegistry:
             return f"Error executing tool '{name}': {e!s}"
 
 
+# Context window manager to keep system prompt and last N messages
+def prune_messages(
+    messages: list[dict[str, Any]], max_history: int = 10
+) -> list[dict[str, Any]]:
+    if len(messages) <= max_history + 1:
+        return messages
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    recent_msgs = messages[-max_history:]
+    return system_msgs + recent_msgs
+
+
 # Global registry instance
 registry = ToolRegistry()
 
@@ -102,6 +113,47 @@ registry.register(
     func=scrape_url,
 )
 
+# Register Persistent Memory Save
+registry.register(
+    name="save_memory",
+    description="Store or update a persistent fact, user preference, or project setting across sessions.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "description": "Unique key or topic (e.g. 'user_preference', 'database_port').",
+            },
+            "value": {
+                "type": "string",
+                "description": "The exact information to store.",
+            },
+            "category": {
+                "type": "string",
+                "description": "Category tag (default: 'general').",
+            },
+        },
+        "required": ["key", "value"],
+    },
+    func=save_memory,
+)
+
+# Register Persistent Memory Recall
+registry.register(
+    name="recall_memory",
+    description="Search persistent memory for previously stored facts, notes, or user preferences.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Optional search term to filter stored memory keys or values.",
+            },
+        },
+    },
+    func=recall_memory,
+)
+
 
 # Function decorator to register a tool with the global registry.
 def register_tool(name: str, description: str, parameters: dict[str, Any]):
@@ -139,9 +191,9 @@ async def run_agent_loop(
                 break
 
     # Iterative tool-calling loop:
-    # 1. Posts chat history + tool definitions to Ollama.
+    # 1. Posts pruned chat history + tool definitions to Ollama.
     # 2. If LLM responds with tool calls, executes them locally.
-    # 3. Feeds results back into messages array as role='tool'.
+    # 3. Feeds results back into full messages array as role='tool'.
     # 4. Loops until LLM returns a text response or max_steps is hit.
 
     # Step 1: Initialise HTTP client and step counter
@@ -150,9 +202,13 @@ async def run_agent_loop(
 
         while step < max_steps:
             step += 1
+
+            # Prune active window so Ollama context stays manageable
+            active_messages = prune_messages(messages)
+
             payload: dict[str, Any] = {
                 "model": model,
-                "messages": messages,
+                "messages": active_messages,
                 "stream": False,
             }
 
@@ -166,12 +222,15 @@ async def run_agent_loop(
                 response.raise_for_status()
             except httpx.HTTPError as e:
                 logger.error(f"Ollama HTTP request failed: {e}")
-                return {"role": "assistant", "content": f"Ollama connection error: {e}"}
+                return {
+                    "role": "assistant",
+                    "content": f"Ollama connection error: {e}",
+                }
 
             res_json = response.json()
             assistant_msg = res_json["choices"][0]["message"]
 
-            # Step 3: Append model's response (tool call or final text)
+            # Step 3: Append model's response (tool call or final text) to full history
             messages.append(assistant_msg)
 
             tool_calls = assistant_msg.get("tool_calls")
@@ -202,7 +261,7 @@ async def run_agent_loop(
                     }
                 )
 
-        # If the loop exits without returning a final response, it means the maximum number of steps was reached without a conclusive answer.
+        # If the loop exits without returning a final response, it means the maximum number of steps was reached.
         return {
             "role": "assistant",
             "content": "Agent reached maximum tool step limit without finalizing a response.",
