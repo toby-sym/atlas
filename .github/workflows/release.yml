@@ -29,7 +29,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Install frontend and Tauri dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix frontend ci
 
       - name: Build backend sidecar
         run: |
