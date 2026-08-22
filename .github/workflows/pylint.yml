@@ -1,41 +1,43 @@
 name: Lint & Format
 
-on: [push]
+on:
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Grants permissions to commit auto-fixes back to the branch
+      contents: write
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pylint ruff
-        pip install -r backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint ruff
+          pip install -r backend/requirements.txt
 
-    - name: Auto-fix and format with Ruff
-      run: |
-        ruff check --fix --exit-zero .
-        ruff format .
+      - name: Auto-fix and format with Ruff
+        run: |
+          ruff check --fix --exit-zero .
+          ruff format .
 
-    - name: Commit Ruff fixes
-      if: matrix.python-version == '3.12' && github.ref != 'refs/heads/main'
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "style: auto-fix with ruff"
+      - name: Commit Ruff fixes
+        if: matrix.python-version == '3.12' && github.ref != 'refs/heads/main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: auto-fix with ruff"
 
-    - name: Analysing the code with pylint
-      run: |
-        PYTHONPATH=. pylint $(git ls-files '*.py')
+      - name: Analysing the code with pylint
+        run: |
+          PYTHONPATH=. pylint $(git ls-files '*.py')

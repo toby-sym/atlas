@@ -1,0 +1,18 @@
+name: Main CI Pipeline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-format:
+    permissions:
+      contents: write # Needed so the called workflow can auto-commit fixes
+    uses: ./.github/workflows/pylint.yml
+
+  backend-test:
+    uses: ./.github/workflows/backend-test.yml
+
+  frontend-test:
+    uses: ./.github/workflows/frontend-test.yml
