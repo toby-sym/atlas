@@ -3,8 +3,9 @@ import json
 import logging
 from collections.abc import Callable
 from typing import Any
-from backend.tools.web import scrape_url, search_web
 import httpx
+from backend.tools.web import scrape_url, search_web
+
 
 logger = logging.getLogger("nook.agent")
 
