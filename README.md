@@ -1,6 +1,6 @@
 # Atlas
 
-A local-first AI agent with a React frontend and a FastAPI backend, powered by a local Ollama model. Ships as a Windows desktop app via Tauri, or run it as a regular web app.
+A local-first AI agent with a React frontend and a FastAPI backend, powered by a local Ollama model. Available as a native Windows desktop app, or run it as a regular web app.
 
 ## Features
 
@@ -8,11 +8,26 @@ A local-first AI agent with a React frontend and a FastAPI backend, powered by a
 - Web search & page scraping
 - Persistent memory (SQLite)
 - Runs entirely on your machine against a local Ollama model
-- Packaged as a native Windows desktop app
 
-## Getting started
+## Installation
 
-Requires [Ollama](https://ollama.com) running locally with your chosen model pulled (see `config.yaml`).
+1. Install [Ollama](https://ollama.com) and pull the model set in `config.yaml` (as of right now: `qwen3:4b`).
+2. Download the latest installer (`.exe` or `.msi`) from the [Releases](../../releases) page.
+3. Run the installer and launch Atlas.
+
+## Configuration
+
+Backend settings (model, Ollama URL, enabled tools) live in `config.yaml`.
+
+## License
+
+TBD
+
+---
+
+## Development
+
+Run the frontend and backend separately for local development:
 
 ```bash
 # Backend
@@ -25,14 +40,4 @@ npm --prefix frontend start
 
 The app will be available at `http://localhost:3000`.
 
-## Desktop app
-
-Atlas can also be built as a native Windows app with Tauri, bundling the backend alongside the UI. See [DESKTOP.md](./DESKTOP.md) for build instructions.
-
-## Configuration
-
-Backend settings (model, Ollama URL, enabled tools) live in `config.yaml`.
-
-## License
-
-TBD
+To build the desktop app yourself instead of using a released installer, see [DESKTOP.md](./DESKTOP.md).
