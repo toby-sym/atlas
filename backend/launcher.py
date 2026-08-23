@@ -1,8 +1,8 @@
 import argparse
 import os
 import sys
-
 import uvicorn
+from backend.main import app
 
 
 def bundled_path(filename: str) -> str:
@@ -17,7 +17,7 @@ def main() -> None:
     args = parser.parse_args()
 
     os.environ.setdefault("CONFIG_PATH", bundled_path("config.yaml"))
-    uvicorn.run("backend.main:app", host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":
