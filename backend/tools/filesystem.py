@@ -3,7 +3,7 @@ import os
 from backend.agent import register_tool
 
 # Defining a safe root directory for file operations to prevent access outside the intended workspace.
-SAFE_ROOT = os.path.abspath("./workspace")
+SAFE_ROOT = os.path.abspath(os.getenv("ATLAS_WORKSPACE", "./workspace"))
 
 
 # Function to resolve a relative file path to an absolute path within the SAFE_ROOT directory, ensuring security.

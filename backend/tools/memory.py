@@ -1,11 +1,12 @@
 import logging
+import os
 from pathlib import Path
 import sqlite3
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("backend/data/memory.db")
+DB_PATH = Path(os.getenv("ATLAS_MEMORY_DB", "backend/data/memory.db"))
 
 
 # Connects to SQLite DB and ensures the memories table exists.
