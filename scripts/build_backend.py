@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def get_target_triple() -> str:
     """Ask rustc for this machine's host target triple, so the sidecar
     filename matches what Tauri looks for on this platform."""
-    result = subprocess.run(["rustc", "-Vv"], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["rustc", "-Vv"], capture_output=True, text=True, check=True
+    )
     for line in result.stdout.splitlines():
         if line.startswith("host:"):
             return line.split(":", 1)[1].strip()
@@ -21,7 +23,9 @@ def main() -> None:
     target_triple = get_target_triple()
     exe_suffix = ".exe" if sys.platform == "win32" else ""
     data_sep = ";" if sys.platform == "win32" else ":"
-    output = ROOT / "src-tauri" / "binaries" / f"atlas-backend-{target_triple}{exe_suffix}"
+    output = (
+        ROOT / "src-tauri" / "binaries" / f"atlas-backend-{target_triple}{exe_suffix}"
+    )
 
     subprocess.run(
         [
