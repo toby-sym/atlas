@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import datetime
+import os
 
+DB_PATH = os.path.abspath('data/memory.db')
 
 class MemoryStore:
     def __init__(self, db_path: str):

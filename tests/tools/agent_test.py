@@ -1,0 +1,34 @@
+import pytest
+from backend.agent import ToolRegistry, run_agent_loop
+
+def test_tool_registry():
+    """Test tool registry functionality"""
+    registry = ToolRegistry()
+
+    # Register a tool
+    registry.register(
+        name="test_tool",
+        description="A test tool",
+        parameters={"type": "object", "properties": {}},
+        func=lambda: "test result"
+    )
+
+    # Verify tool is registered
+    assert "test_tool" in registry._tools
+    assert registry.get_schemas()[0]["function"]["name"] == "test_tool"
+
+def test_tool_execution():
+    """Test tool execution functionality"""
+    registry = ToolRegistry()
+
+    # Register a tool
+    registry.register(
+        name="test_tool",
+        description="A test tool",
+        parameters={"type": "object", "properties": {}},
+        func=lambda: "test result"
+    )
+
+    # Execute the tool
+    result = registry.execute("test_tool", {})
+    assert result == "test result"
