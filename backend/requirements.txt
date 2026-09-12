@@ -5,3 +5,6 @@ pyyaml
 pydantic
 beautifulsoup4
 ddgs
+pytest
+pytest-cov
+pytest-timeout
