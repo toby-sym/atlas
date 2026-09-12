@@ -1,4 +1,5 @@
 name: Build Pipeline
+run-name: ${{ github.event_name == 'push' && format('release {0}', github.ref_name) || (inputs.build_type == 'release' && format('release {0}', inputs.tag_name || github.ref_name) || 'dev') }}
 
 on:
   push:
