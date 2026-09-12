@@ -6,7 +6,6 @@ from typing import Any
 import httpx
 from backend.tools.web import scrape_url, search_web
 from backend.tools.memory import recall_memory, save_memory
-from backend.tools import filesystem
 
 logger = logging.getLogger("atlas.agent")
 
@@ -154,6 +153,7 @@ registry.register(
     },
     func=recall_memory,
 )
+
 
 # Function decorator to register a tool with the global registry.
 def register_tool(name: str, description: str, parameters: dict[str, Any]):
