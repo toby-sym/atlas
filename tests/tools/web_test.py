@@ -20,7 +20,4 @@ def test_scrape_error_handling():
     """Test error handling for invalid URLs"""
     result = asyncio.run(scrape_url("https://invalid-url-that-does-not-exist"))
     assert result["status"] in (404, 500, "error")
-    assert (
-        "error" in result["content"].lower()
-        or "failed" in result["content"].lower()
-    )
+    assert "error" in result["content"].lower() or "failed" in result["content"].lower()
