@@ -49,7 +49,7 @@ jobs:
           if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION="${RAW_TAG#v}"
           else
-            VERSION="0.0.0-dev"
+            VERSION="0.0.0-${{ github.run_number }}"
           fi
           echo "Building version $VERSION"
           node -e "
@@ -127,7 +127,7 @@ jobs:
           if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION="${RAW_TAG#v}"
           else
-            VERSION="0.0.0-dev"
+            VERSION="0.0.0-${{ github.run_number }}"
           fi
           echo "Building version $VERSION"
           node -e "
@@ -204,7 +204,7 @@ jobs:
           if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION="${RAW_TAG#v}"
           else
-            VERSION="0.0.0-dev"
+            VERSION="0.0.0-${{ github.run_number }}"
           fi
           echo "Building version $VERSION"
           node -e "
