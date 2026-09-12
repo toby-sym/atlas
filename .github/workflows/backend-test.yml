@@ -19,16 +19,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Check for requirements.txt
-      run: |
-        if [ -f requirements.txt ]; then
-            echo "Found requirements.txt - installing dependencies"
-        else
-            echo "ERROR: requirements.txt not found in repository"
-            echo "Please create a requirements.txt file with your Python dependencies"
-            exit 1
-        fi
-
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
