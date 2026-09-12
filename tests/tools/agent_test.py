@@ -15,7 +15,7 @@ def test_tool_registry():
     )
 
     # Verify tool is registered
-    assert "test_tool" in registry._tools #pylint: disable=protected-access
+    assert "test_tool" in registry._tools  # pylint: disable=protected-access
     assert registry.get_schemas()[0]["function"]["name"] == "test_tool"
 
 
