@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from backend.tools.web import scrape_url, search_web
 from backend.tools.memory import recall_memory, save_memory
+from backend.tools import filesystem  # pyright: ignore[reportUnusedImport]
 
 logger = logging.getLogger("atlas.agent")
 
