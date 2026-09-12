@@ -1,3 +1,5 @@
+name: Build Pipeline
+
 on:
   push:
     tags:
@@ -12,6 +14,10 @@ on:
         options:
           - dev
           - release
+      tag_name:
+        description: "Release Tag (required if build_type is release)"
+        required: false
+        type: string
 
 permissions:
   contents: write
