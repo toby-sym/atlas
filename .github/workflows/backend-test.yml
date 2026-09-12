@@ -2,6 +2,13 @@ name: Backend Tests
 
 on:
   push:
+    branches: [
+      main,
+      capability/*,
+      feature/*,
+      story/*,
+      fix/*
+    ]
 
 jobs:
   test-tools:
