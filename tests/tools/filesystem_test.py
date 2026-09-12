@@ -1,5 +1,5 @@
-import pytest
 from backend.tools.filesystem import _resolve_path, read_file
+
 
 def test_resolve_path():
     """Test path resolution functionality"""
@@ -9,6 +9,7 @@ def test_resolve_path():
         assert "test.txt" in path
     except ValueError as e:
         assert "Access outside safe workspace directory" in str(e)
+
 
 def test_read_file():
     """Test file reading functionality"""

@@ -1,5 +1,5 @@
-import pytest
-from backend.agent import ToolRegistry, run_agent_loop
+from backend.agent import ToolRegistry
+
 
 def test_tool_registry():
     """Test tool registry functionality"""
@@ -10,12 +10,13 @@ def test_tool_registry():
         name="test_tool",
         description="A test tool",
         parameters={"type": "object", "properties": {}},
-        func=lambda: "test result"
+        func=lambda: "test result",
     )
 
     # Verify tool is registered
     assert "test_tool" in registry._tools
     assert registry.get_schemas()[0]["function"]["name"] == "test_tool"
+
 
 def test_tool_execution():
     """Test tool execution functionality"""
@@ -26,7 +27,7 @@ def test_tool_execution():
         name="test_tool",
         description="A test tool",
         parameters={"type": "object", "properties": {}},
-        func=lambda: "test result"
+        func=lambda: "test result",
     )
 
     # Execute the tool
