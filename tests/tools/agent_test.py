@@ -1,3 +1,4 @@
+import asyncio
 from backend.agent import ToolRegistry
 
 
@@ -30,6 +31,6 @@ def test_tool_execution():
         func=lambda: "test result",
     )
 
-    # Execute the tool
-    result = registry.execute("test_tool", {})
+    # Execute the tool with asyncio.run()
+    result = asyncio.run(registry.execute("test_tool", {}))
     assert result == "test result"
