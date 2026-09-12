@@ -163,7 +163,9 @@ def register_tool(name: str, description: str, parameters: dict[str, Any]):
 
     return decorator
 
+
 from backend.tools import filesystem  # noqa: E402, F401
+
 
 # Asynchronous function to run the agent loop, which interacts with the Ollama API and executes tool calls as needed.
 async def run_agent_loop(
