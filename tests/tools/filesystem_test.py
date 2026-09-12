@@ -17,7 +17,7 @@ def test_read_file():
     # Create the expected test file dynamically during testing
     test_file = Path("tests/test_file.txt")
     test_file.parent.mkdir(parents=True, exist_ok=True)
-    test_file.write_text("This is a test file")
+    test_file.write_text("This is a test file", encoding="utf-8")
 
     try:
         content = read_file("tests/test_file.txt")
