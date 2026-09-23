@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+import httpx
 from backend.tools.web import scrape_url, search_web
 from backend.tools.memory import recall_memory, save_memory
 
@@ -54,7 +55,14 @@ class ToolRegistry:
             if isinstance(result, (dict, list)):
                 return json.dumps(result)
             return str(result)
-        except Exception as e:
+        except (
+            httpx.HTTPError,
+            json.JSONDecodeError,
+            KeyError,
+            ValueError,
+            TypeError,
+            OSError,
+        ) as e:
             logger.error("Execution error in tool '%s': %s", name, e, exc_info=True)
             return f"Error executing tool '{name}': {e!s}"
 
