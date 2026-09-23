@@ -171,7 +171,7 @@ function reserveBeta(root, branchRef, requestedBase, runId) {
 }
 
 function resolveBuild(root, env) {
-  const type = env.GITHUB_EVENT_NAME === "push" ? "release" : env.BUILD_TYPE;
+  const type = env.BUILD_TYPE || (env.GITHUB_EVENT_NAME === "push" ? "release" : "");
   if (type === "beta")
     return reserveBeta(
       root,

@@ -1,6 +1,8 @@
 # Local workspace for testing environment for Atlas
 workspace/
 .venv
+/node_modules/
+/frontend/node_modules/
 
 # Ignore Python bytecode files and cache
 *.pyc
@@ -8,6 +10,11 @@ workspace/
 
 # Tauri and PyInstaller output
 src-tauri/target/
+src-tauri/gen/
 src-tauri/binaries/*.exe
 build/
 dist/
+*.spec
+backend/data/memory.db
+data/memory.db
+data/conversations.db

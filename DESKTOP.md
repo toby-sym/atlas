@@ -1,12 +1,12 @@
 # Desktop build
 
-Atlas is packaged as a Windows Tauri application. The React production build is embedded in the installer and the FastAPI server is bundled as a PyInstaller sidecar. The sidecar listens on `127.0.0.1:8000` and is stopped when the desktop app exits.
+Atlas is packaged as a Tauri application. The React production build is embedded in the installer and the FastAPI server is bundled as a PyInstaller sidecar. The sidecar binds to a per-launch loopback port and is stopped when the desktop app exits. Tauri passes a private request token through its command bridge. Browser development continues to use `http://localhost:8000`.
 
 ## Local prerequisites
 
 - Node.js 20+
 - Python 3.12+
-- Rust stable with the Windows MSVC target
+- Rust stable with the target for the machine being built
 - Microsoft WebView2 (normally already installed on Windows 10/11)
 
 Install backend packaging dependencies and the frontend dependencies:
@@ -32,7 +32,7 @@ npm run desktop:dev
 
 ## Releases
 
-Pushing a tag such as `v0.1.0` starts `.github/workflows/build.yml`. It builds
+Pushing a tag such as `v0.4.0` starts `.github/workflows/build.yml`. It builds
 Windows (NSIS and MSI), macOS (Apple Silicon and Intel DMG), and Linux (DEB and
 AppImage) installers. You can also select **Actions → Build Pipeline → Run
 workflow** and choose a build type:
@@ -40,19 +40,19 @@ workflow** and choose a build type:
 | Build type | Version | Destination |
 | --- | --- | --- |
 | `dev` | `0.0.0-<run number>` | Workflow artifacts only |
-| `release` | Required release tag, e.g. `v0.2.0` | Normal GitHub Release |
-| `beta` | `v0.2.0-beta.1`, then `v0.2.0-beta.2` | GitHub prerelease; never marked Latest |
+| `release` | Required release tag, e.g. `v0.4.0` | Normal GitHub Release |
+| `beta` | Next available number, currently `v0.4.0-beta.3` | GitHub prerelease; never marked Latest |
 
 For a beta, select a **branch** and leave the tag input empty to use the base
 version in the repository-root `Version.properties`:
 
 ```properties
-version=0.1.0
-beta=0
+version=0.4.0
+beta=2
 ```
 
-`beta` is the **last reserved number**, so `0` produces `0.1.0-beta.1` next.
-Alternatively, enter a base version such as `v0.2.0` in the tag input. The
+`beta` is the **last reserved number**, so `2` produces `0.4.0-beta.3` next.
+Alternatively, enter a base version such as `v0.4.0` in the tag input. The
 workflow writes that base back to the properties file and starts its counter
 at 1, or after any existing beta tags for that version. You can also change
 `version` and reset `beta=0` in a normal commit to begin a new version series.
@@ -79,6 +79,12 @@ window title, and app header. The build passes `REACT_APP_BUILD_VERSION` and
 internally because [MSI version fields require numbers](https://v2.tauri.app/reference/config/#wixconfig);
 beta and stable builds share the same app identity, rather than installing side
 by side. Switching channels may require uninstalling the existing MSI first.
+
+The release workflow runs frontend, backend, and version tests plus a frozen
+backend smoke test against a fake Ollama endpoint on each platform. The smoke
+test covers startup, authentication, document upload, OCR, streaming chat, and
+saved conversations. It publishes the release only after Windows, macOS, and
+Linux package jobs all succeed.
 
 Run the version unit and local-Git integration tests with:
 

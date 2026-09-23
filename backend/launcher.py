@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 import uvicorn
-from backend.main import app
 
 
 def bundled_path(filename: str) -> str:
@@ -17,6 +16,11 @@ def main() -> None:
     args = parser.parse_args()
 
     os.environ.setdefault("CONFIG_PATH", bundled_path("config.yaml"))
+    # Set defaults before importing main because settings are loaded at import time.
+    # Delay API import until bundled configuration has been loaded.
+    # pylint: disable=import-outside-toplevel
+    from backend.main import app
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
