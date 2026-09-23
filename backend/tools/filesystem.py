@@ -9,8 +9,9 @@ SAFE_ROOT = os.path.abspath(os.getenv("ATLAS_WORKSPACE", "./workspace"))
 # Function to resolve a relative file path to an absolute path within the SAFE_ROOT directory, ensuring security.
 def _resolve_path(relative_path: str) -> str:
     os.makedirs(SAFE_ROOT, exist_ok=True)
-    target = os.path.abspath(os.path.join(SAFE_ROOT, relative_path))
-    if not target.startswith(SAFE_ROOT):
+    root = os.path.realpath(SAFE_ROOT)
+    target = os.path.realpath(os.path.join(root, relative_path))
+    if os.path.commonpath([root, target]) != root:
         raise ValueError("Access outside safe workspace directory is prohibited.")
     return target
 
@@ -33,7 +34,8 @@ def _resolve_path(relative_path: str) -> str:
 # Function to read the contents of a file given its relative path
 def read_file(path: str) -> str:
     try:
-        with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
+        resolved_path = _resolve_path(path)
+        with open(resolved_path, "r", encoding="utf-8-sig", errors="replace") as f:
             return f.read()
-    except (OSError, UnicodeDecodeError) as e:
+    except (OSError, UnicodeDecodeError, ValueError) as e:
         return f"Error reading file: {e!s}"

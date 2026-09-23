@@ -3,6 +3,7 @@ uvicorn[standard]
 httpx
 pyyaml
 pydantic
+python-multipart
 beautifulsoup4
 ddgs
 pytest

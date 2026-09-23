@@ -14,13 +14,13 @@ def test_resolve_path():
 
 def test_read_file():
     """Test file reading functionality"""
-    # Create the expected test file dynamically during testing
-    test_file = Path("tests/test_file.txt")
+    relative_path = "tests/test_file.txt"
+    test_file = Path(_resolve_path(relative_path))
     test_file.parent.mkdir(parents=True, exist_ok=True)
     test_file.write_text("This is a test file", encoding="utf-8")
 
     try:
-        content = read_file("tests/test_file.txt")
+        content = read_file(relative_path)
         assert content is not None
         assert "This is a test file" in content
     finally:

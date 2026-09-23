@@ -3,7 +3,7 @@ import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
 import ChatInput from './components/ChatInput';
 
-const API_URL = 'http://localhost:8000/chat';
+const API_URL = 'http://localhost:8000';
 
 function getToolStatusFromPrompt(prompt) {
   const lower = prompt.toLowerCase();
@@ -30,6 +30,8 @@ function App() {
   const [status, setStatus] = useState('online');
   const [toolStatus, setToolStatus] = useState('');
   const [error, setError] = useState('');
+  const [fileNotice, setFileNotice] = useState('');
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ function App() {
     setStatus(predictedToolStatus ? 'tool' : 'thinking');
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: nextMessages }),
@@ -83,10 +85,35 @@ function App() {
     await sendMessage(input);
   };
 
+  const handleFileSelect = async (file) => {
+    setError('');
+    setFileNotice('');
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`${API_URL}/files`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.detail || 'Could not add that file to the workspace.');
+      }
+      const result = await response.json();
+      setFileNotice(`Added "${result.path}" to the workspace. Ask Atlas to read it.`);
+    } catch (err) {
+      setError(err.message || 'Unable to upload the file.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const clearChat = () => {
     setMessages([]);
     setInput('');
     setError('');
+    setFileNotice('');
     setToolStatus('');
     setStatus('online');
   };
@@ -111,11 +138,19 @@ function App() {
           </div>
         )}
 
+        {fileNotice && (
+          <div className="border-t border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-200">
+            {fileNotice}
+          </div>
+        )}
+
         <ChatInput
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onSubmit={handleSubmit}
-          disabled={loading}
+          onFileSelect={handleFileSelect}
+          disabled={loading || uploading}
+          uploading={uploading}
         />
       </div>
     </div>
