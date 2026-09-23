@@ -1,6 +1,7 @@
 """Smoke-test a frozen Atlas backend against a local fake Ollama endpoint."""
 
 import argparse
+from io import BytesIO
 import json
 import os
 import signal
@@ -16,7 +17,7 @@ import httpx
 from docx import Document
 
 
-class FakeOllamaHandler(BaseHTTPRequestHandler):
+class FakeOllamaHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-name
     def do_GET(self):
         payload = {"models": [{"name": "qwen3:4b"}]}
         self._send(200, payload)
@@ -117,8 +118,6 @@ def main():
 
             document = Document()
             document.add_paragraph("Beta attachment smoke marker")
-            from io import BytesIO
-
             buffer = BytesIO()
             document.save(buffer)
             uploaded = client.post(
