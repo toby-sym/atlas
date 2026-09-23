@@ -1,5 +1,6 @@
 name: Build Version Tests
 on:
+  workflow_call:
   push:
     paths:
       - "Version.properties"

@@ -16,3 +16,6 @@ jobs:
 
   frontend-test:
     uses: ./.github/workflows/frontend-test.yml
+
+  version-test:
+    uses: ./.github/workflows/version-test.yml
