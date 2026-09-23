@@ -1,4 +1,31 @@
-# Getting Started with Create React App
+# Atlas spatial workspace
+
+The interface connects to the existing Atlas backend at `http://localhost:8000`.
+Set `REACT_APP_API_URL` before starting or building to use a different endpoint.
+
+- The Luminary Dock supports chat, file uploads, browser speech recognition where
+  available, and `Ctrl/Cmd K` to focus. Voice recognition uses the browser's speech
+  provider; it is not guaranteed to run locally.
+- Web research and Memory chips add explicit tool instructions to the next prompt.
+  They are context preferences, not permission or security controls.
+- The Overview example is a labeled, simulated workflow. It demonstrates thinking,
+  execution, and incremental text with collapsible logs; it does not change files.
+- Real chat uses the existing buffered `/chat` endpoint. Live token/tool events,
+  GPU/VRAM measurements, memory graphs, and worker telemetry need backend support.
+  Unavailable hardware values are displayed as dashes.
+- Code offers Copy and a Diff against an empty file. Run shows the bundled example
+  output in preview mode; for model responses it prepares a request for Atlas to
+  explain execution in your environment. It does not evaluate arbitrary code.
+- Session history and the list of newly uploaded files are held in memory. Uploaded
+  files themselves persist in the backend workspace.
+- Responsive layouts, keyboard focus styles, and reduced-motion preferences are
+  supported. The visual core uses CSS and SVG; no generated image asset is needed.
+
+Run `npm test -- --watchAll=false --runInBand` for interaction tests and
+`npm run build` for the production bundle. Jest's import aliases support the
+modern Markdown dependency graph under Create React App's older test resolver.
+
+## Create React App tooling
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
