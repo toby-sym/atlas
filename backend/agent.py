@@ -66,9 +66,9 @@ def prune_messages(
     if len(messages) <= max_history + 1:
         return messages
     system_msgs = [m for m in messages if m.get("role") == "system"]
-    recent_msgs = [
-        message for message in messages if message.get("role") != "system"
-    ][-max_history:]
+    recent_msgs = [message for message in messages if message.get("role") != "system"][
+        -max_history:
+    ]
     return system_msgs + recent_msgs
 
 
