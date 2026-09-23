@@ -119,16 +119,16 @@ function App() {
   };
 
   return (
-    <div className="app-shell min-h-screen p-4 text-slate-100 md:p-8">
+    <div className="app-shell relative flex h-full min-h-0 w-full flex-col overflow-hidden text-slate-100">
       <div className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(37,99,235,0.28),transparent_36%),radial-gradient(circle_at_86%_10%,rgba(56,189,248,0.18),transparent_34%),linear-gradient(180deg,#04060C_0%,#060B15_100%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:34px_34px] opacity-30" />
       </div>
 
-      <div className="animate-panel-enter relative mx-auto flex max-w-6xl flex-col overflow-hidden rounded-[1.6rem] border border-slate-800/90 bg-slate-950/80 shadow-[0_30px_90px_rgba(2,6,23,0.65)] backdrop-blur-xl">
+      <div className="animate-panel-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden border border-slate-800/90 bg-slate-950/80 shadow-[0_30px_90px_rgba(2,6,23,0.65)] backdrop-blur-xl">
         <Header status={loading ? 'thinking' : status} onClearChat={clearChat} />
 
-        <div ref={scrollRef} className="max-h-[70vh] min-h-[500px] overflow-y-auto">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <ChatWindow messages={messages} loading={loading} toolStatus={toolStatus} />
         </div>
 
