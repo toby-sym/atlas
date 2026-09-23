@@ -125,7 +125,8 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
         assert "Beta attachment smoke marker" in json.dumps(ollama.last_messages)
 
         with client.stream(
-            "POST", "/chat/stream",
+            "POST",
+            "/chat/stream",
             json={"messages": [{"role": "user", "content": "Say hello."}]},
         ) as streamed:
             assert streamed.status_code == 200
@@ -134,17 +135,17 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
             assert '"type": "done"' in body
 
         image = Image.new("RGB", (1400, 350), "white")
-        ImageDraw.Draw(image).text(
-            (45, 100), "ATLAS SCANNED NOTE", fill="black",
-            font=ImageFont.load_default(size=68),
-        )
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default(size=68)
+        draw.text((45, 100), "ATLAS SCANNED NOTE", fill="black", font=font)
         for image_format, filename in (("PNG", "scan.png"), ("PDF", "scan.pdf")):
             scanned = BytesIO()
             image.save(scanned, format=image_format)
             ocr = client.post("/files", files={"file": (filename, scanned.getvalue())})
             assert ocr.status_code == 200, ocr.text
             extracted = client.post(
-                "/chat", json={
+                "/chat",
+                json={
                     "messages": [{"role": "user", "content": "Read this."}],
                     "attachments": [ocr.json()["path"]],
                 },
@@ -155,10 +156,13 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
         conversation_id = "6e090202-8a40-4ec3-a184-3d783f268bc9"
         saved = client.put(
             f"/conversations/{conversation_id}",
-            json={"title": "Smoke conversation", "messages": [
-                {"role": "user", "content": "Say hello."},
-                {"role": "assistant", "content": "Hello."},
-            ]},
+            json={
+                "title": "Smoke conversation",
+                "messages": [
+                    {"role": "user", "content": "Say hello."},
+                    {"role": "assistant", "content": "Hello."},
+                ],
+            },
         )
         assert saved.status_code == 200, saved.text
         assert client.get(f"/conversations/{conversation_id}").status_code == 200

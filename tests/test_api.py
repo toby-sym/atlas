@@ -288,7 +288,9 @@ def test_text_starting_with_error_prefix_is_read_as_content(monkeypatch, tmp_pat
         "/files", files={"file": ("log.txt", b"Error reading file: real log line")}
     )
     assert uploaded.status_code == 200
-    assert filesystem.read_file(uploaded.json()["path"]).startswith("Error reading file:")
+    assert filesystem.read_file(uploaded.json()["path"]).startswith(
+        "Error reading file:"
+    )
 
 
 def test_scanned_image_and_pdf_are_read_by_local_ocr(monkeypatch, tmp_path):

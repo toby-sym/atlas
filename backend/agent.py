@@ -457,7 +457,9 @@ async def stream_agent_loop(
                     yield {"type": "token", "text": token}
                 tool_deltas = delta.get("tool_calls") or []
                 if not isinstance(tool_deltas, list):
-                    raise AgentServiceError("Ollama returned an invalid tool call group.")
+                    raise AgentServiceError(
+                        "Ollama returned an invalid tool call group."
+                    )
                 for tool_delta in tool_deltas:
                     if not isinstance(tool_delta, dict):
                         raise AgentServiceError("Ollama returned an invalid tool call.")

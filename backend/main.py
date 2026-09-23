@@ -61,10 +61,7 @@ app.add_middleware(
 @app.middleware("http")
 async def require_desktop_token(request: Request, call_next):
     expected = os.getenv("ATLAS_API_TOKEN")
-    if (
-        expected
-        and request.method != "OPTIONS"
-    ):
+    if expected and request.method != "OPTIONS":
         supplied = request.headers.get("X-Atlas-Token", "")
         if not hmac.compare_digest(expected, supplied):
             return JSONResponse(
