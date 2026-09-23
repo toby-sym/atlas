@@ -32,4 +32,56 @@ npm run desktop:dev
 
 ## Releases
 
-Pushing a tag such as `v0.1.0` starts `.github/workflows/release.yml` on `windows-latest`. The workflow installs Python, Node, and Rust, builds the backend sidecar, builds NSIS and MSI installers, and uploads both to the GitHub Release for that tag. It can also be started manually from the Actions tab.
+Pushing a tag such as `v0.1.0` starts `.github/workflows/build.yml`. It builds
+Windows (NSIS and MSI), macOS (Apple Silicon and Intel DMG), and Linux (DEB and
+AppImage) installers. You can also select **Actions → Build Pipeline → Run
+workflow** and choose a build type:
+
+| Build type | Version | Destination |
+| --- | --- | --- |
+| `dev` | `0.0.0-<run number>` | Workflow artifacts only |
+| `release` | Required release tag, e.g. `v0.2.0` | Normal GitHub Release |
+| `beta` | `v0.2.0-beta.1`, then `v0.2.0-beta.2` | GitHub prerelease; never marked Latest |
+
+For a beta, select a **branch** and leave the tag input empty to use the base
+version in the repository-root `Version.properties`:
+
+```properties
+version=0.1.0
+beta=0
+```
+
+`beta` is the **last reserved number**, so `0` produces `0.1.0-beta.1` next.
+Alternatively, enter a base version such as `v0.2.0` in the tag input. The
+workflow writes that base back to the properties file and starts its counter
+at 1, or after any existing beta tags for that version. You can also change
+`version` and reset `beta=0` in a normal commit to begin a new version series.
+Existing tags prevent numbers from being reused if a branch has an older counter.
+
+One preparation job reserves the number for all platforms. It checks out the
+latest commit of the selected branch, commits only `Version.properties`, and
+pushes that commit and its annotated beta tag atomically. Platform jobs build
+that exact commit. Reservations are queued using GitHub Actions
+[concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+The workflow needs permission to write repository contents and to push the
+selected branch and tags; branch protection must allow the workflow bot's
+counter commit. It does not bypass protection or force-push.
+
+A failed/cancelled build keeps its reserved number. **Re-run jobs** on that same
+workflow run reuses its original beta tag; a new manual run reserves the next
+number. A rejected branch/tag push fails preparation without partially publishing
+the reservation. Stable and dev builds do not change the beta counter. Manually
+pushing a `vX.Y.Z-beta.N` tag also produces a prerelease without incrementing it.
+
+The full beta version appears in the release name, installer filenames, native
+window title, and app header. The build passes `REACT_APP_BUILD_VERSION` and
+`REACT_APP_BUILD_CHANNEL` to the frontend. WiX uses the numeric base version
+internally because [MSI version fields require numbers](https://v2.tauri.app/reference/config/#wixconfig);
+beta and stable builds share the same app identity, rather than installing side
+by side. Switching channels may require uninstalling the existing MSI first.
+
+Run the version unit and local-Git integration tests with:
+
+```bash
+node --test scripts/version.test.cjs
+```
