@@ -12,3 +12,6 @@ memory:
   enabled: true
   type: sqlite
   path: "./data/memory.db"
+
+conversations:
+  path: "./data/conversations.db"

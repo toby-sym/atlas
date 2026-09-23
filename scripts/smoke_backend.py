@@ -15,6 +15,7 @@ from pathlib import Path
 
 import httpx
 from docx import Document
+from PIL import Image, ImageDraw, ImageFont
 
 
 class FakeOllamaServer(ThreadingHTTPServer):
@@ -32,6 +33,18 @@ class FakeOllamaHandler(BaseHTTPRequestHandler):  # pylint: disable=invalid-name
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length))
         self.server.last_messages = request.get("messages", [])
+        if request.get("stream"):
+            body = (
+                'data: {"choices":[{"delta":{"content":"Smoke "}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":"stream completed."}}]}\n\n'
+                "data: [DONE]\n\n"
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self._send(
             200,
             {
@@ -68,9 +81,9 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
     with httpx.Client(
         base_url=f"http://127.0.0.1:{port}",
         headers={"X-Atlas-Token": token},
-        timeout=2.0,
+        timeout=20.0,
     ) as client:
-        deadline = time.time() + 20
+        deadline = time.time() + 60
         while time.time() < deadline:
             try:
                 response = client.get("/health")
@@ -86,6 +99,7 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
 
         status = client.get("/status")
         assert status.json()["model"]["state"] == "ready", status.text
+        assert status.json()["telemetry"]["available"] is True
         document = Document()
         document.add_paragraph("Beta attachment smoke marker")
         buffer = BytesIO()
@@ -94,6 +108,7 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
             "/files", files={"file": ("smoke.docx", buffer.getvalue())}
         )
         assert uploaded.status_code == 200, uploaded.text
+        stored_path = uploaded.json()["path"]
 
         result = client.post(
             "/chat",
@@ -101,13 +116,53 @@ def _exercise_backend(process, port: int, token: str, ollama: FakeOllamaServer) 
                 "messages": [
                     {"role": "user", "content": "Summarize the attached file."}
                 ],
-                "attachments": ["smoke.docx"],
+                "attachments": [stored_path],
                 "context": {"research": False, "memory": False},
             },
         )
         assert result.status_code == 200, result.text
         assert result.json()["message"]["content"] == "Smoke test completed."
         assert "Beta attachment smoke marker" in json.dumps(ollama.last_messages)
+
+        with client.stream(
+            "POST", "/chat/stream",
+            json={"messages": [{"role": "user", "content": "Say hello."}]},
+        ) as streamed:
+            assert streamed.status_code == 200
+            body = "".join(streamed.iter_text())
+            assert '"type": "token"' in body
+            assert '"type": "done"' in body
+
+        image = Image.new("RGB", (1400, 350), "white")
+        ImageDraw.Draw(image).text(
+            (45, 100), "ATLAS SCANNED NOTE", fill="black",
+            font=ImageFont.load_default(size=68),
+        )
+        for image_format, filename in (("PNG", "scan.png"), ("PDF", "scan.pdf")):
+            scanned = BytesIO()
+            image.save(scanned, format=image_format)
+            ocr = client.post("/files", files={"file": (filename, scanned.getvalue())})
+            assert ocr.status_code == 200, ocr.text
+            extracted = client.post(
+                "/chat", json={
+                    "messages": [{"role": "user", "content": "Read this."}],
+                    "attachments": [ocr.json()["path"]],
+                },
+            )
+            assert extracted.status_code == 200, extracted.text
+            assert "ATLAS SCANNED NOTE" in json.dumps(ollama.last_messages)
+
+        conversation_id = "6e090202-8a40-4ec3-a184-3d783f268bc9"
+        saved = client.put(
+            f"/conversations/{conversation_id}",
+            json={"title": "Smoke conversation", "messages": [
+                {"role": "user", "content": "Say hello."},
+                {"role": "assistant", "content": "Hello."},
+            ]},
+        )
+        assert saved.status_code == 200, saved.text
+        assert client.get(f"/conversations/{conversation_id}").status_code == 200
+        assert client.delete(f"/conversations/{conversation_id}").status_code == 200
         assert client.get("/status").status_code == 200
 
 
@@ -143,6 +198,7 @@ def _run_backend(backend: Path, ollama: FakeOllamaServer) -> None:
                 "ATLAS_OLLAMA_URL": f"http://127.0.0.1:{ollama.server_address[1]}/v1/chat/completions",
                 "ATLAS_WORKSPACE": str(temp_path / "workspace"),
                 "ATLAS_MEMORY_DB": str(temp_path / "memory.db"),
+                "ATLAS_CONVERSATIONS_DB": str(temp_path / "conversations.db"),
             }
         )
         with subprocess.Popen(
@@ -176,7 +232,7 @@ def main() -> None:
             ollama.shutdown()
             server_thread.join(timeout=5)
     print(
-        "Frozen backend status, authentication, DOCX upload, attachment reading, and chat passed."
+        "Frozen backend status, authentication, OCR, streaming, saved conversations, and chat passed."
     )
 
 

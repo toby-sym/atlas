@@ -3,19 +3,22 @@
 from pathlib import Path
 from io import BytesIO
 import asyncio
+from uuid import uuid4
 
 import httpx
 
 from docx import Document
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfWriter
 
-from backend import main
+from backend import conversations, main
 from backend.tools import filesystem
 
 
 def _client(monkeypatch, tmp_path):
     filesystem.set_workspace_path(str(tmp_path / "workspace"))
+    conversations.set_conversations_path(str(tmp_path / "conversations.db"))
 
     async def model_status():
         return {"state": "unavailable", "name": main.DEFAULT_MODEL}
@@ -58,6 +61,7 @@ def test_status_reports_model_and_features(monkeypatch, tmp_path):
 
     client = _client(monkeypatch, tmp_path)
     monkeypatch.setattr(main, "_model_status", model_status)
+    monkeypatch.setattr(main, "telemetry_snapshot", lambda: {"available": True})
     response = client.get("/status")
     assert response.status_code == 200
     assert response.json() == {
@@ -67,7 +71,10 @@ def test_status_reports_model_and_features(monkeypatch, tmp_path):
             "web_research": main.WEB_ENABLED,
             "memory": main.MEMORY_ENABLED,
             "files": main.FILESYSTEM_ENABLED,
+            "ocr": main.FILESYSTEM_ENABLED,
+            "saved_conversations": True,
         },
+        "telemetry": {"available": True},
     }
 
 
@@ -210,9 +217,9 @@ def test_upload_supports_docx_rejects_unsupported_and_size(monkeypatch, tmp_path
     document.save(buffer)
     response = client.post("/files", files={"file": ("brief.docx", buffer.getvalue())})
     assert response.status_code == 200
-    assert "Readable document" in filesystem.read_file("brief.docx")
+    assert "Readable document" in filesystem.read_file(response.json()["path"])
 
-    unsupported = client.post("/files", files={"file": ("scan.png", b"image")})
+    unsupported = client.post("/files", files={"file": ("scan.gif", b"image")})
     assert unsupported.status_code == 415
 
     monkeypatch.setattr(main, "MAX_FILE_BYTES", 5)
@@ -227,7 +234,7 @@ def test_upload_and_extract_text_pdf_and_reject_scanned_pdf(monkeypatch, tmp_pat
         "/files", files={"file": ("brief.pdf", _text_pdf("PDF content"))}
     )
     assert response.status_code == 200
-    assert "PDF content" in filesystem.read_file("brief.pdf")
+    assert "PDF content" in filesystem.read_file(response.json()["path"])
 
     writer = PdfWriter()
     writer.add_blank_page(width=72, height=72)
@@ -235,7 +242,7 @@ def test_upload_and_extract_text_pdf_and_reject_scanned_pdf(monkeypatch, tmp_pat
     writer.write(scanned)
     response = client.post("/files", files={"file": ("scan.pdf", scanned.getvalue())})
     assert response.status_code == 400
-    assert "Scanned PDFs" in response.json()["detail"]
+    assert "OCR could recognize" in response.json()["detail"]
 
 
 def test_upload_rejects_corrupt_document(monkeypatch, tmp_path):
@@ -250,7 +257,7 @@ def test_text_extraction_is_bounded(monkeypatch, tmp_path):
     content = b"a" * (filesystem.MAX_EXTRACTED_CHARS + 5)
     uploaded = client.post("/files", files={"file": ("long.txt", content)})
     assert uploaded.status_code == 200
-    extracted = filesystem.read_file("long.txt")
+    extracted = filesystem.read_file(uploaded.json()["path"])
     assert "Document excerpt truncated" in extracted
     assert len(extracted) < filesystem.MAX_EXTRACTED_CHARS + 100
 
@@ -260,4 +267,83 @@ def test_desktop_token_is_required(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     assert client.get("/status").status_code == 401
     assert client.get("/health").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
     assert client.get("/status", headers={"X-Atlas-Token": "secret"}).status_code == 200
+
+
+def test_duplicate_filenames_get_distinct_workspace_paths(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    first = client.post("/files", files={"file": ("notes.txt", b"First")})
+    second = client.post("/files", files={"file": ("notes.txt", b"Second")})
+    assert first.status_code == second.status_code == 200
+    assert first.json()["filename"] == second.json()["filename"] == "notes.txt"
+    assert first.json()["path"] != second.json()["path"]
+    assert filesystem.read_file(first.json()["path"]) == "First"
+    assert filesystem.read_file(second.json()["path"]) == "Second"
+
+
+def test_text_starting_with_error_prefix_is_read_as_content(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/files", files={"file": ("log.txt", b"Error reading file: real log line")}
+    )
+    assert uploaded.status_code == 200
+    assert filesystem.read_file(uploaded.json()["path"]).startswith("Error reading file:")
+
+
+def test_scanned_image_and_pdf_are_read_by_local_ocr(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    image = Image.new("RGB", (1400, 350), "white")
+    ImageDraw.Draw(image).text(
+        (45, 100),
+        "ATLAS SCANNED NOTE",
+        fill="black",
+        font=ImageFont.load_default(size=68),
+    )
+    for format_name, filename in (("PNG", "scan.png"), ("PDF", "scan.pdf")):
+        buffer = BytesIO()
+        image.save(buffer, format=format_name)
+        uploaded = client.post("/files", files={"file": (filename, buffer.getvalue())})
+        assert uploaded.status_code == 200, uploaded.text
+        assert "ATLAS SCANNED NOTE" in filesystem.read_file(uploaded.json()["path"])
+
+
+def test_saved_conversation_crud(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    conversation_id = str(uuid4())
+    payload = {
+        "title": "Plan a launch",
+        "messages": [
+            {"role": "user", "content": "Plan a launch"},
+            {"role": "assistant", "content": "Start with a checklist."},
+        ],
+    }
+    saved = client.put(f"/conversations/{conversation_id}", json=payload)
+    assert saved.status_code == 200, saved.text
+    assert (
+        client.get("/conversations").json()["conversations"][0]["title"]
+        == payload["title"]
+    )
+    assert (
+        client.get(f"/conversations/{conversation_id}").json()["messages"]
+        == payload["messages"]
+    )
+    assert client.delete(f"/conversations/{conversation_id}").status_code == 200
+    assert client.get(f"/conversations/{conversation_id}").status_code == 404
+
+
+def test_stream_endpoint_forwards_tokens_and_completion(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    async def fake_stream(**_kwargs):
+        yield {"type": "token", "text": "Hello"}
+        yield {"type": "done", "message": {"role": "assistant", "content": "Hello"}}
+
+    monkeypatch.setattr(main, "stream_agent_loop", fake_stream)
+    response = client.post(
+        "/chat/stream", json={"messages": [{"role": "user", "content": "Hi"}]}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert '"type": "token"' in response.text
+    assert '"type": "done"' in response.text

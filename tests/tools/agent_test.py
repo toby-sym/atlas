@@ -1,4 +1,9 @@
 import asyncio
+import json as json_lib
+
+# pylint: disable=protected-access
+
+import httpx
 from backend.agent import ToolRegistry
 from backend import agent
 
@@ -196,6 +201,30 @@ def test_research_preference_runs_search_before_model(monkeypatch):
     assert searches == ["Summarize this topic"]
 
 
+def test_explicit_memory_recall_runs_before_model_without_chip(monkeypatch):
+    recalled = []
+    monkeypatch.setattr(
+        agent,
+        "recall_memory",
+        lambda: recalled.append(True) or [{"key": "project", "value": "Atlas"}],
+    )
+
+    async def prepare():
+        return await agent._prepare_history(
+            [{"role": "user", "content": "Recall my memories."}],
+            research=False,
+            recall=False,
+            attachment_context="",
+            web_enabled=False,
+            memory_enabled=True,
+            filesystem_enabled=False,
+        )
+
+    history, _tools = asyncio.run(prepare())
+    assert recalled == [True]
+    assert "Atlas" in history[0]["content"]
+
+
 def test_malformed_tool_arguments_are_reported_to_model(monkeypatch):
     class Response:
         def __init__(self, payload):
@@ -266,3 +295,124 @@ def test_malformed_tool_arguments_are_reported_to_model(monkeypatch):
         )
     )
     assert result["content"] == "The tool request was invalid."
+
+
+def test_stream_decoder_reads_model_tokens():
+    body = (
+        'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"Atlas"}}]}\n\n'
+        "data: [DONE]\n\n"
+    ).encode()
+
+    async def collect():
+        transport = httpx.MockTransport(
+            lambda _request: httpx.Response(200, content=body)
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            return [
+                delta
+                async for delta in agent._stream_model_deltas(
+                    client, "http://ollama.test", {"stream": True}
+                )
+            ]
+
+    assert asyncio.run(collect()) == [{"content": "Hello "}, {"content": "Atlas"}]
+
+
+def test_stream_agent_emits_tool_activity_and_final_answer(monkeypatch):
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    rounds = []
+
+    async def fake_deltas(_client, _url, payload):
+        rounds.append(payload)
+        if len(rounds) == 1:
+            yield {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call-1",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": json_lib.dumps({"path": "note.txt"}),
+                        },
+                    }
+                ]
+            }
+        else:
+            yield {"content": "Here is the note."}
+
+    async def fake_execute(_name, _arguments):
+        return "Note content"
+
+    monkeypatch.setattr(agent.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(agent, "_stream_model_deltas", fake_deltas)
+    monkeypatch.setattr(agent.registry, "execute", fake_execute)
+
+    async def collect():
+        return [
+            event
+            async for event in agent.stream_agent_loop(
+                [{"role": "user", "content": "Read the note"}], max_steps=1
+            )
+        ]
+
+    events = asyncio.run(collect())
+    assert [event["type"] for event in events] == ["tool", "tool", "token", "done"]
+    assert events[-1]["message"]["content"] == "Here is the note."
+    assert "tools" not in rounds[-1]
+
+
+def test_stream_rejects_malformed_tool_delta():
+    calls = []
+    try:
+        agent._merge_tool_delta(calls, {"index": 0, "function": ["bad"]})
+    except agent.AgentServiceError as exc:
+        assert "invalid tool call" in str(exc)
+    else:
+        raise AssertionError("Malformed tool delta should produce a service error")
+
+
+def test_generic_find_request_does_not_trigger_web_search(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Found it."}}]
+            }
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, _url, json):
+            assert all(
+                schema["function"]["name"] != "search_web"
+                for schema in json.get("tools", [])
+            )
+            return Response()
+
+    monkeypatch.setattr(agent.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(agent, "search_web", lambda **_kwargs: 1 / 0)
+    result = asyncio.run(
+        agent.run_agent_loop(
+            [{"role": "user", "content": "Find the bug in this code"}],
+        )
+    )
+    assert result["content"] == "Found it."

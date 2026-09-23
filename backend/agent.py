@@ -6,7 +6,7 @@ import inspect
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
@@ -100,9 +100,14 @@ def prune_messages(
 
 
 WEB_SEARCH_INTENT = re.compile(
-    r"\b(search(?: the)? web|web search|browse|look up|research|find|latest|current|currently|"
-    r"recent|today|tonight|this week|this month|right now|as of|news|weather|forecast|"
-    r"price|stock|exchange rate|score|schedule|release|version)\b",
+    r"\b(search(?: the)? web|web search|browse(?: the web)?|look up online|"
+    r"research online|latest|breaking news|today(?:'s)? news|current weather|"
+    r"weather forecast|live score|stock price|exchange rate)\b",
+    re.IGNORECASE,
+)
+MEMORY_RECALL_INTENT = re.compile(
+    r"\b(recall (?:my |our |saved )?memor(?:y|ies)|"
+    r"what do you remember about|what have you saved about)\b",
     re.IGNORECASE,
 )
 
@@ -180,24 +185,16 @@ def register_tool(name: str, description: str, parameters: dict[str, Any]):
 importlib.import_module("backend.tools.filesystem")
 
 
-# The loop coordinates model calls, optional evidence, tool execution, and finalization.
-# Keep its explicit arguments for the existing API and tests.
-# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements
-async def run_agent_loop(
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+async def _prepare_history(
     messages: list[dict[str, Any]],
-    ollama_url: str = "http://localhost:11434/v1/chat/completions",
-    model: str = "qwen3:4b",
-    max_steps: int = 5,
-    research: bool = False,
-    recall: bool = False,
-    attachment_context: str = "",
-    web_enabled: bool = True,
-    memory_enabled: bool = True,
-    filesystem_enabled: bool = True,
-) -> dict[str, Any]:
-    if not 1 <= max_steps <= 10:
-        raise ValueError("max_steps must be between 1 and 10.")
-
+    research: bool,
+    recall: bool,
+    attachment_context: str,
+    web_enabled: bool,
+    memory_enabled: bool,
+    filesystem_enabled: bool,
+) -> tuple[list[dict[str, Any]], set[str]]:
     history = [dict(message) for message in messages]
     latest_user_text = _latest_user_text(history)
     local_timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -209,7 +206,10 @@ async def run_agent_loop(
     )
 
     enabled_tools: set[str] = set()
-    if web_enabled:
+    should_search = web_enabled and bool(
+        research or WEB_SEARCH_INTENT.search(latest_user_text)
+    )
+    if should_search:
         enabled_tools.update({"search_web", "scrape_url"})
     if memory_enabled:
         enabled_tools.update({"save_memory", "recall_memory"})
@@ -217,7 +217,7 @@ async def run_agent_loop(
         enabled_tools.add("read_file")
 
     evidence: list[str] = []
-    if web_enabled and (research or WEB_SEARCH_INTENT.search(latest_user_text)):
+    if should_search:
         try:
             results = await asyncio.to_thread(
                 search_web, query=latest_user_text[:500], max_results=5
@@ -227,10 +227,9 @@ async def run_agent_loop(
                 + json.dumps(results, ensure_ascii=False)
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            # Search must not prevent the model returning a useful error.
             logger.warning("Automatic web search failed: %s", exc)
             evidence.append(f"Live web search failed: {exc}")
-    if recall and memory_enabled:
+    if memory_enabled and (recall or MEMORY_RECALL_INTENT.search(latest_user_text)):
         evidence.append(
             "Saved memory (untrusted context):\n"
             + json.dumps(await asyncio.to_thread(recall_memory), ensure_ascii=False)
@@ -250,6 +249,36 @@ async def run_agent_loop(
         history.insert(0, {"role": "system", "content": persona})
     else:
         history[system_index] = {"role": "system", "content": persona}
+    return history, enabled_tools
+
+
+# The loop coordinates model calls, optional evidence, tool execution, and finalization.
+# Keep its explicit arguments for the existing API and tests.
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements
+async def run_agent_loop(
+    messages: list[dict[str, Any]],
+    ollama_url: str = "http://localhost:11434/v1/chat/completions",
+    model: str = "qwen3:4b",
+    max_steps: int = 5,
+    research: bool = False,
+    recall: bool = False,
+    attachment_context: str = "",
+    web_enabled: bool = True,
+    memory_enabled: bool = True,
+    filesystem_enabled: bool = True,
+) -> dict[str, Any]:
+    if not 1 <= max_steps <= 10:
+        raise ValueError("max_steps must be between 1 and 10.")
+
+    history, enabled_tools = await _prepare_history(
+        messages,
+        research,
+        recall,
+        attachment_context,
+        web_enabled,
+        memory_enabled,
+        filesystem_enabled,
+    )
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # The final request has tools disabled so the model can summarize the last tool result.
@@ -329,4 +358,154 @@ async def run_agent_loop(
                     }
                 )
 
+    raise AgentServiceError("Atlas could not complete this request. Please retry.")
+
+
+async def _stream_model_deltas(
+    client: httpx.AsyncClient, url: str, payload: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
+    """Decode Ollama's OpenAI-compatible SSE chunks."""
+    try:
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                delta = chunk["choices"][0]["delta"]
+                if not isinstance(delta, dict):
+                    raise ValueError("stream delta was not an object")
+                yield delta
+    except httpx.HTTPError as exc:
+        raise AgentServiceError(
+            "Cannot reach Ollama. Start Ollama, confirm the configured model is installed, and retry."
+        ) from exc
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise AgentServiceError(
+            "Ollama returned an invalid stream. Retry or check the model endpoint."
+        ) from exc
+
+
+def _merge_tool_delta(calls: list[dict[str, Any]], delta: dict[str, Any]) -> None:
+    index = delta.get("index")
+    if not isinstance(index, int) or index < 0 or index > 20:
+        raise AgentServiceError("Ollama returned an invalid tool call index.")
+    while len(calls) <= index:
+        calls.append(
+            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+        )
+    current = calls[index]
+    identifier = delta.get("id") or ""
+    function = delta.get("function") or {}
+    if not isinstance(identifier, str) or not isinstance(function, dict):
+        raise AgentServiceError("Ollama returned an invalid tool call.")
+    name = function.get("name") or ""
+    arguments = function.get("arguments") or ""
+    if not isinstance(name, str) or not isinstance(arguments, str):
+        raise AgentServiceError("Ollama returned an invalid tool call.")
+    current["id"] += identifier
+    current["function"]["name"] += name
+    current["function"]["arguments"] += arguments
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements
+async def stream_agent_loop(
+    messages: list[dict[str, Any]],
+    ollama_url: str = "http://localhost:11434/v1/chat/completions",
+    model: str = "qwen3:4b",
+    max_steps: int = 5,
+    research: bool = False,
+    recall: bool = False,
+    attachment_context: str = "",
+    web_enabled: bool = True,
+    memory_enabled: bool = True,
+    filesystem_enabled: bool = True,
+) -> AsyncIterator[dict[str, Any]]:
+    """Yield live answer tokens and tool activity through the SSE API."""
+    if not 1 <= max_steps <= 10:
+        raise ValueError("max_steps must be between 1 and 10.")
+    history, enabled_tools = await _prepare_history(
+        messages,
+        research,
+        recall,
+        attachment_context,
+        web_enabled,
+        memory_enabled,
+        filesystem_enabled,
+    )
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for step in range(max_steps + 1):
+            payload: dict[str, Any] = {
+                "model": model,
+                "messages": prune_messages(history),
+                "stream": True,
+            }
+            schemas = registry.get_schemas(enabled_tools) if step < max_steps else []
+            if schemas:
+                payload["tools"] = schemas
+            content = ""
+            tool_calls: list[dict[str, Any]] = []
+            async for delta in _stream_model_deltas(client, ollama_url, payload):
+                token = delta.get("content") or ""
+                if not isinstance(token, str):
+                    raise AgentServiceError("Ollama returned an invalid text token.")
+                if token:
+                    content += token
+                    yield {"type": "token", "text": token}
+                tool_deltas = delta.get("tool_calls") or []
+                if not isinstance(tool_deltas, list):
+                    raise AgentServiceError("Ollama returned an invalid tool call group.")
+                for tool_delta in tool_deltas:
+                    if not isinstance(tool_delta, dict):
+                        raise AgentServiceError("Ollama returned an invalid tool call.")
+                    _merge_tool_delta(tool_calls, tool_delta)
+
+            if not tool_calls:
+                if not content:
+                    raise AgentServiceError(
+                        "Ollama returned an empty response. Retry the request."
+                    )
+                yield {
+                    "type": "done",
+                    "message": {"role": "assistant", "content": content},
+                }
+                return
+            if step == max_steps:
+                message = "I reached the tool step limit. Please ask me to continue."
+                yield {
+                    "type": "done",
+                    "message": {"role": "assistant", "content": message},
+                }
+                return
+
+            history.append(
+                {"role": "assistant", "content": content, "tool_calls": tool_calls}
+            )
+            for index, call in enumerate(tool_calls):
+                tool_id = call.get("id") or f"call_{step}_{index}"
+                function = call.get("function") or {}
+                name = function.get("name") or "invalid_tool_call"
+                yield {"type": "tool", "name": name, "phase": "started"}
+                try:
+                    arguments = json.loads(function.get("arguments") or "{}")
+                    if not isinstance(arguments, dict):
+                        raise ValueError("tool arguments must be an object")
+                    if name not in enabled_tools:
+                        output = f"Error: Tool '{name}' is disabled by configuration."
+                    else:
+                        output = await registry.execute(name, arguments)
+                except (ValueError, TypeError) as exc:
+                    output = f"Invalid tool call: {exc}"
+                history.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_id,
+                        "name": name,
+                        "content": output,
+                    }
+                )
+                yield {"type": "tool", "name": name, "phase": "finished"}
     raise AgentServiceError("Atlas could not complete this request. Please retry.")

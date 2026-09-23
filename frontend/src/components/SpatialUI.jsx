@@ -290,7 +290,7 @@ export function Message({ message, streaming, onRun, runLabel = "Ask Atlas" }) {
     </article>
   );
 }
-export function Telemetry({ connection, modelStatus, modelName, phase, messages, files, onClose }) {
+export function Telemetry({ connection, modelStatus, modelName, phase, messages, files, hardware, onClose }) {
   return (
     <aside className="telemetry glass" aria-label="System telemetry">
       <div className="telemetry-heading">
@@ -331,7 +331,7 @@ export function Telemetry({ connection, modelStatus, modelName, phase, messages,
           {phase === "idle" ? "Standing by" : phase}
         </div>
         <div className="metric">
-          <span>Messages this session</span>
+          <span>Messages in conversation</span>
           <strong>{messages}</strong>
         </div>
         <div className="metric">
@@ -344,17 +344,21 @@ export function Telemetry({ connection, modelStatus, modelName, phase, messages,
         <div className="metric">
           <span>
             <Icon name="cpu" size={14} />
-            GPU utilization
+            CPU utilization
           </span>
-          <strong>—</strong>
+          <strong>{hardware?.available ? `${hardware.cpu_percent}%` : "Unavailable"}</strong>
         </div>
-        <div className="meter" />
+        <div className="meter"><span style={{ width: `${hardware?.cpu_percent || 0}%` }} /></div>
         <div className="metric">
-          <span>VRAM usage</span>
-          <strong>—</strong>
+          <span>System memory</span>
+          <strong>{hardware?.available ? `${hardware.memory_used_gb} / ${hardware.memory_total_gb} GB` : "Unavailable"}</strong>
         </div>
-        <div className="meter" />
-        <p>Hardware telemetry is not exposed by the local backend.</p>
+        <div className="meter"><span style={{ width: `${hardware?.memory_percent || 0}%` }} /></div>
+        <div className="metric">
+          <span>Atlas backend memory</span>
+          <strong>{hardware?.available ? `${hardware.backend_rss_mb} MB` : "Unavailable"}</strong>
+        </div>
+        <p>GPU and VRAM readings are not available.</p>
       </div>
       <div className="telemetry-section">
         <div className="nav-label">WORKSPACE TREE</div>
@@ -364,9 +368,9 @@ export function Telemetry({ connection, modelStatus, modelName, phase, messages,
         </div>
         {files.length ? (
           files.map((file) => (
-            <div className="tree-file" key={file}>
+            <div className="tree-file" key={file.path}>
               <Icon name="file" size={13} />
-              {file}
+              {file.filename}
             </div>
           ))
         ) : (

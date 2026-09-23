@@ -7,10 +7,17 @@ import {
   Message,
   Telemetry,
 } from "./components/SpatialUI";
-import { backendHeaders, resolveBackend } from "./backendClient";
+import { backendHeaders, readChatEvents, resolveBackend } from "./backendClient";
 import "./App.css";
 
 const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.0-dev";
+function newConversationId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (letter) => {
+    const value = Math.floor(Math.random() * 16);
+    return (letter === "x" ? value : (value & 3) | 8).toString(16);
+  });
+}
 const suggestions = [
   {
     icon: "globe",
@@ -45,14 +52,18 @@ export default function App() {
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
   const [telemetry, setTelemetry] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [savedConversations, setSavedConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("idle");
+  const [toolActivity, setToolActivity] = useState("");
   const [connection, setConnection] = useState("checking");
   const [modelStatus, setModelStatus] = useState("checking");
   const [modelName, setModelName] = useState("qwen3:4b");
+  const [telemetryData, setTelemetryData] = useState(null);
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState([]);
-  const [selectedFile, setSelectedFile] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(false);
   const [previewStep, setPreviewStep] = useState(0);
   const [previewContent, setPreviewContent] = useState("");
@@ -66,6 +77,8 @@ export default function App() {
     requestRef = useRef(null),
     speechRef = useRef(null),
     apiRef = useRef(null);
+  const saveQueueRef = useRef(Promise.resolve());
+  const openedConversationRef = useRef(null);
   const busy = phase !== "idle";
 
   useEffect(() => {
@@ -87,6 +100,7 @@ export default function App() {
           setModelStatus(result.model?.state || "unavailable");
           setModelName(result.model?.name || "qwen3:4b");
           setContextFeatures(result.features || { web_research: true, memory: true, files: true });
+          setTelemetryData(result.telemetry || null);
         }
       } catch {
         if (!cancelled && !controller.signal.aborted) {
@@ -106,6 +120,54 @@ export default function App() {
       speechRef.current?.abort();
     };
   }, []);
+  useEffect(() => {
+    if (connection !== "online") return;
+    let cancelled = false;
+    async function loadConversations() {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/conversations`, {
+          headers: backendHeaders(info.token),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setSavedConversations(data.conversations || []);
+      } catch {
+        // A temporary backend failure is already shown by the status poll.
+      }
+    }
+    loadConversations();
+    return () => { cancelled = true; };
+  }, [connection]);
+  useEffect(() => {
+    if (!activeConversationId || !messages.length || phase !== "idle" || connection !== "online") return;
+    if (openedConversationRef.current === activeConversationId) {
+      openedConversationRef.current = null;
+      return;
+    }
+    const id = activeConversationId;
+    const title = messages.find((message) => message.role === "user")?.content.trim().slice(0, 120) || "Conversation";
+    const snapshot = messages.map(({ role, content }) => ({ role, content }));
+    let current = true;
+    saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
+        method: "PUT",
+        headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ title, messages: snapshot }),
+      });
+      if (!response.ok) throw new Error("Could not save this conversation.");
+      if (current) {
+        setSavedConversations((existing) => [
+          { id, title },
+          ...existing.filter((item) => item.id !== id),
+        ]);
+      }
+    }).catch(() => {
+      if (current) setNotice("Could not save this conversation locally. Retry when Atlas is connected.");
+    });
+    return () => { current = false; };
+  }, [activeConversationId, messages, phase, connection]);
   useEffect(() => {
     if (view === "Conversation")
       feedRef.current?.scrollTo?.({
@@ -166,10 +228,12 @@ export default function App() {
     setListening(false);
     setPreview(false);
     setMessages([]);
+    setActiveConversationId(null);
     setFiles([]);
     setPhase("idle");
+    setToolActivity("");
     setInput("");
-    setSelectedFile("");
+    setSelectedFile(null);
     setNotice("");
     setView("Overview");
     if (window.innerWidth <= 760) setSidebar(false);
@@ -178,47 +242,74 @@ export default function App() {
     if (!text.trim() || busy) return;
     const controller = new AbortController();
     requestRef.current = controller;
-    const history = [...messages, { role: "user", content: text.trim() }];
+    const history = [...messages, { role: "user", content: text }];
+    if (!activeConversationId) setActiveConversationId(newConversationId());
     setPreview(false);
     setMessages(history);
     setView("Conversation");
     setInput("");
     setNotice("");
     setPhase("thinking");
+    setToolActivity("");
     setStarted(Date.now());
-    const payload = history.map((m) => ({ role: m.role, content: m.content }));
+    const payload = history.slice(-100).map((m) => ({ role: m.role, content: m.content }));
     const sentAttachment = selectedFile;
-    setSelectedFile("");
+    let sawTokens = false;
+    let completed = false;
     try {
       const connectionInfo = apiRef.current || await resolveBackend();
       apiRef.current = connectionInfo;
-      const response = await fetch(`${connectionInfo.baseUrl}/chat`, {
+      const response = await fetch(`${connectionInfo.baseUrl}/chat/stream`, {
         method: "POST",
         headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: payload,
           context,
-          attachments: sentAttachment ? [sentAttachment] : [],
+          attachments: sentAttachment ? [sentAttachment.path] : [],
         }),
         signal: controller.signal,
       });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.detail || "Atlas could not complete this request.",
-        );
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Atlas could not complete this request.");
+      }
+      await readChatEvents(response, (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === "token") {
+          setPhase("streaming");
+          if (!sawTokens) {
+            sawTokens = true;
+            setMessages((current) => [...current, { role: "assistant", content: event.text }]);
+          } else {
+            setMessages((current) => {
+              const next = [...current];
+              next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + event.text };
+              return next;
+            });
+          }
+        } else if (event.type === "tool") {
+          setToolActivity(event.name);
+          setPhase(event.phase === "started" ? "tool" : "thinking");
+        } else if (event.type === "done") {
+          if (!event.message || typeof event.message.content !== "string")
+            throw new Error("Atlas returned an invalid final answer.");
+          completed = true;
+          setMessages((current) => sawTokens
+            ? [...current.slice(0, -1), event.message]
+            : [...current, event.message]);
+        } else if (event.type === "error") {
+          throw new Error(event.message || "Atlas could not complete this request.");
+        }
+      });
+      if (!completed) throw new Error("Atlas stopped before returning a final answer.");
       if (controller.signal.aborted) return;
-      setMessages((current) => [
-        ...current,
-        data.message || {
-          role: "assistant",
-          content: "No response was returned. Please try again.",
-        },
-      ]);
+      setSelectedFile(null);
       setConnection("online");
       setModelStatus("ready");
     } catch (error) {
       if (controller.signal.aborted) return;
+      if (sawTokens && !completed)
+        setMessages((current) => current.slice(0, -1));
       setNotice(
         error.message === "Failed to fetch"
           ? "Unable to reach Atlas. Check that the local backend is running, then try again."
@@ -230,6 +321,41 @@ export default function App() {
         setPhase("idle");
         requestRef.current = null;
       }
+    }
+  }
+  async function openConversation(id) {
+    requestRef.current?.abort();
+    try {
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
+        headers: backendHeaders(info.token),
+      });
+      if (!response.ok) throw new Error("Could not open this conversation.");
+      const stored = await response.json();
+      openedConversationRef.current = id;
+      setActiveConversationId(id);
+      setMessages(stored.messages || []);
+      setSelectedFile(null);
+      setPhase("idle");
+      setNotice("");
+      setView("Conversation");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+  async function deleteConversation(id) {
+    try {
+      await saveQueueRef.current.catch(() => {});
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
+        method: "DELETE",
+        headers: backendHeaders(info.token),
+      });
+      if (!response.ok) throw new Error("Could not delete this conversation.");
+      setSavedConversations((existing) => existing.filter((item) => item.id !== id));
+      if (activeConversationId === id) reset();
+    } catch (error) {
+      setNotice(error.message);
     }
   }
   async function uploadFile(event) {
@@ -256,10 +382,11 @@ export default function App() {
       if (!response.ok)
         throw new Error(result.detail || "The file could not be uploaded.");
       if (!controller.signal.aborted) {
-        setFiles((current) => [...current, result.path]);
-        setSelectedFile(result.path);
+        const uploaded = { path: result.path, filename: result.filename || result.path };
+        setFiles((current) => [...current, uploaded]);
+        setSelectedFile(uploaded);
         setInput((current) => current || "Summarize the attached file and cite useful sections.");
-        setNotice(`Added ${result.path} to your workspace.`);
+        setNotice(`Added ${uploaded.filename} to your workspace.`);
       }
     } catch (error) {
       if (!controller.signal.aborted) setNotice(error.message);
@@ -379,30 +506,30 @@ export default function App() {
           ))}
         </nav>
         <div className="nav-label recent-label">
-          THIS SESSION
+          SAVED CONVERSATIONS
           <span>
-            {messages
-              .filter((m) => m.role === "user")
-              .length.toString()
+            {savedConversations.length.toString()
               .padStart(2, "0")}
           </span>
         </div>
         <div className="session-list">
-          {messages.length ? (
-            messages
-              .filter((m) => m.role === "user")
-              .slice(-4)
-              .map((m, i) => (
-                <button key={i} onClick={() => navigate("Conversation")}>
+          {savedConversations.length ? (
+            savedConversations.map((saved) => (
+              <div className="saved-session" key={saved.id}>
+                <button onClick={() => openConversation(saved.id)}>
                   <Icon name="chat" size={14} />
-                  <span>{m.content}</span>
+                  <span>{saved.title}</span>
                 </button>
-              ))
+                <button className="delete-session" aria-label={`Delete ${saved.title}`} onClick={() => deleteConversation(saved.id)}>
+                  <Icon name="close" size={12} />
+                </button>
+              </div>
+            ))
           ) : (
             <p>
-              A fresh canvas.
+              No saved conversations yet.
               <br />
-              See where your ideas take you.
+              Your chats stay on this machine.
             </p>
           )}
         </div>
@@ -607,7 +734,7 @@ export default function App() {
                         "Help me bring a little structure to my next big idea.",
                     }}
                   />
-                  <ExecutionCard
+          <ExecutionCard
                     title="Thinking through your workspace"
                     subtitle="Planning · Context and structure"
                     status={previewStep > 0 ? "complete" : "running"}
@@ -660,6 +787,7 @@ export default function App() {
                     <Message
                       key={i}
                       message={message}
+                      streaming={phase === "streaming" && i === messages.length - 1 && message.role === "assistant"}
                       onRun={(code) =>
                         selectPrompt(
                           `Review this code and explain how to run it safely in my environment:\n\n${code}`,
@@ -671,19 +799,19 @@ export default function App() {
                     <ExecutionCard
                       title={
                         phase === "tool"
-                          ? "Adding your file to the workspace"
+                          ? toolActivity || "Adding your file to the workspace"
                           : "Atlas is thinking"
                       }
                       subtitle={
                         phase === "tool"
-                          ? "File I/O · Uploading"
+                          ? toolActivity ? "Agent tool · Running" : "File I/O · Uploading"
                           : "Local model · Waiting for response"
                       }
                       status="running"
                       started={started}
                       logs={[
                         "Request sent to the local Atlas backend.",
-                        "Waiting for the backend to finish. Tool-level events are not available.",
+                        toolActivity ? `Tool activity: ${toolActivity}` : "Waiting for Atlas to respond.",
                       ]}
                     />
                   )}
@@ -745,7 +873,7 @@ export default function App() {
                     <div className="nav-label">ADDED THIS SESSION</div>
                     {files.map((file) => (
                       <button
-                        key={file}
+                        key={file.path}
                         onClick={() =>
                           (() => {
                             setSelectedFile(file);
@@ -754,7 +882,7 @@ export default function App() {
                         }
                       >
                         <Icon name="file" size={17} />
-                        {file}
+                        {file.filename}
                         <Icon name="arrowUpRight" size={15} />
                       </button>
                     ))}
@@ -816,8 +944,8 @@ export default function App() {
           {selectedFile && (
             <div className="selected-file">
               <Icon name="file" size={14} />
-              <span>Attached: {selectedFile}</span>
-              <button type="button" aria-label="Remove attached file" onClick={() => setSelectedFile("")}><Icon name="close" size={12} /></button>
+              <span>Attached: {selectedFile.filename}</span>
+              <button type="button" aria-label="Remove attached file" onClick={() => setSelectedFile(null)}><Icon name="close" size={12} /></button>
             </div>
           )}
           <form
@@ -916,7 +1044,7 @@ export default function App() {
           hidden
           ref={fileRef}
           onChange={uploadFile}
-          accept=".txt,.md,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.c,.h,.cpp,.hpp,.sh,.ps1,.toml,.ini,.log,.sql,.env,.diff,.patch,.pdf,.docx"
+          accept=".txt,.md,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.c,.h,.cpp,.hpp,.sh,.ps1,.toml,.ini,.log,.sql,.env,.diff,.patch,.pdf,.docx,.png,.jpg,.jpeg"
           aria-label="Choose a file"
         />
       </main>
@@ -928,6 +1056,7 @@ export default function App() {
           phase={phase}
           messages={messages.length}
           files={files}
+          hardware={telemetryData}
           onClose={() => setTelemetry(false)}
         />
       )}

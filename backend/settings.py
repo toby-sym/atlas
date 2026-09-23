@@ -34,3 +34,7 @@ MEMORY_PATH = os.getenv(
     "ATLAS_MEMORY_DB",
     CONFIG.get("memory", {}).get("path", "backend/data/memory.db"),
 )
+CONVERSATIONS_PATH = os.getenv(
+    "ATLAS_CONVERSATIONS_DB",
+    CONFIG.get("conversations", {}).get("path", "./data/conversations.db"),
+)

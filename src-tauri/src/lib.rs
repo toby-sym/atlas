@@ -61,6 +61,7 @@ pub fn run() {
             let workspace_dir = app_data_dir.join("workspace");
             fs::create_dir_all(&workspace_dir)?;
             let memory_db = app_data_dir.join("memory.db");
+            let conversations_db = app_data_dir.join("conversations.db");
 
             let mut connected = None;
             for _attempt in 0..5 {
@@ -76,6 +77,10 @@ pub fn run() {
                         workspace_dir.to_string_lossy().into_owned(),
                     )
                     .env("ATLAS_MEMORY_DB", memory_db.to_string_lossy().into_owned())
+                    .env(
+                        "ATLAS_CONVERSATIONS_DB",
+                        conversations_db.to_string_lossy().into_owned(),
+                    )
                     .env("ATLAS_API_TOKEN", &token)
                     .spawn()?;
 

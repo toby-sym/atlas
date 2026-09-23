@@ -213,6 +213,10 @@
   color: #524e63;
   font-family: "JetBrains Mono", monospace;
 }
+.session-list {
+  min-height: 0;
+  overflow-y: auto;
+}
 .session-list p {
   color: #686577;
   line-height: 1.9;
@@ -235,6 +239,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.saved-session {
+  display: flex;
+  align-items: center;
+}
+.saved-session > button:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.session-list .delete-session {
+  width: auto;
+  padding: 10px 7px;
+  color: #8f829d;
 }
 .session-list svg {
   flex-shrink: 0;
@@ -1487,6 +1504,13 @@
   margin-top: 10px;
   border-radius: 3px;
   background: #ffffff08;
+}
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8ce0d5;
+  transition: width 0.3s ease;
 }
 .tree-root,
 .tree-file {

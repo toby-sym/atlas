@@ -41,17 +41,17 @@ workflow** and choose a build type:
 | --- | --- | --- |
 | `dev` | `0.0.0-<run number>` | Workflow artifacts only |
 | `release` | Required release tag, e.g. `v0.4.0` | Normal GitHub Release |
-| `beta` | `v0.4.0-beta.1`, then `v0.4.0-beta.2` | GitHub prerelease; never marked Latest |
+| `beta` | Next available number, currently `v0.4.0-beta.3` | GitHub prerelease; never marked Latest |
 
 For a beta, select a **branch** and leave the tag input empty to use the base
 version in the repository-root `Version.properties`:
 
 ```properties
 version=0.4.0
-beta=1
+beta=2
 ```
 
-`beta` is the **last reserved number**, so `1` produces `0.4.0-beta.2` next.
+`beta` is the **last reserved number**, so `2` produces `0.4.0-beta.3` next.
 Alternatively, enter a base version such as `v0.4.0` in the tag input. The
 workflow writes that base back to the properties file and starts its counter
 at 1, or after any existing beta tags for that version. You can also change
@@ -81,8 +81,10 @@ beta and stable builds share the same app identity, rather than installing side
 by side. Switching channels may require uninstalling the existing MSI first.
 
 The release workflow runs frontend, backend, and version tests plus a frozen
-backend smoke test against a fake Ollama endpoint on each platform. It publishes
-the release only after Windows, macOS, and Linux package jobs all succeed.
+backend smoke test against a fake Ollama endpoint on each platform. The smoke
+test covers startup, authentication, document upload, OCR, streaming chat, and
+saved conversations. It publishes the release only after Windows, macOS, and
+Linux package jobs all succeed.
 
 Run the version unit and local-Git integration tests with:
 
