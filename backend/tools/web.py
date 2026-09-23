@@ -2,7 +2,6 @@ import logging
 from typing import Any, Dict, List
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-from ddgs.exceptions import DDGSException
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -17,24 +16,39 @@ HEADERS = {
 
 
 # This module provides web-related tools for the agent
-def search_web(query: str, max_results: int = 5) -> List[Dict[str, str]]:
-    # Performs a web search using DuckDuckGo and returns a list of search results.
+def search_web(
+    query: str, max_results: int = 5
+) -> List[Dict[str, str]] | Dict[str, Any]:
+    """Search DuckDuckGo and return normalized, linkable results."""
+    query = query.strip()
+    if not query:
+        return {"error": "Search query cannot be empty.", "results": []}
+
+    max_results = max(1, min(int(max_results), 10))
     try:
         results: List[Dict[str, str]] = []
         with DDGS() as ddgs:
             raw_results = ddgs.text(query, max_results=max_results)
             for item in raw_results:
+                url = item.get("href") or item.get("url") or ""
+                if not url.startswith(("http://", "https://")):
+                    continue
                 results.append(
                     {
                         "title": item.get("title", ""),
-                        "url": item.get("href", ""),
+                        "url": url,
                         "snippet": item.get("body", ""),
                     }
                 )
+        if not results:
+            return {
+                "error": "The search provider returned no usable results.",
+                "results": [],
+            }
         return results
-    except DDGSException as e:
-        logger.error("DuckDuckGo search failed for query '%s': %s", query, e)
-        return []
+    except Exception as e:  # DDGS may raise provider and transport exceptions.
+        logger.exception("DuckDuckGo search failed for query '%s'", query)
+        return {"error": f"Web search failed: {e!s}", "results": []}
 
 
 # Asynchronous function to scrape a web page and extract clean text content.
