@@ -8,7 +8,10 @@ workspace/
 
 # Tauri and PyInstaller output
 src-tauri/target/
+src-tauri/gen/
 src-tauri/binaries/*.exe
 build/
 dist/
+*.spec
 backend/data/memory.db
+data/memory.db

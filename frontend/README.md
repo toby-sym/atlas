@@ -6,8 +6,9 @@ Set `REACT_APP_API_URL` before starting or building to use a different endpoint.
 - The Luminary Dock supports chat, file uploads, browser speech recognition where
   available, and `Ctrl/Cmd K` to focus. Voice recognition uses the browser's speech
   provider; it is not guaranteed to run locally.
-- Web research and Memory chips add explicit tool instructions to the next prompt.
-  They are context preferences, not permission or security controls.
+- Web research and Memory chips are sent as typed preferences. When enabled,
+  Atlas retrieves that context before asking the model; explicit requests still
+  work when a chip is off.
 - The Overview example is a labeled, simulated workflow. It demonstrates thinking,
   execution, and incremental text with collapsible logs; it does not change files.
 - Real chat uses the existing buffered `/chat` endpoint. Live token/tool events,
@@ -16,8 +17,13 @@ Set `REACT_APP_API_URL` before starting or building to use a different endpoint.
 - Code offers Copy and a Diff against an empty file. Run shows the bundled example
   output in preview mode; for model responses it prepares a request for Atlas to
   explain execution in your environment. It does not evaluate arbitrary code.
-- Session history and the list of newly uploaded files are held in memory. Uploaded
-  files themselves persist in the backend workspace.
+- Session history and the list of newly uploaded files are held in memory. A
+  selected text, PDF, or DOCX file is attached to the next request. Uploaded files
+  persist in the backend workspace.
+- The header reports backend and Ollama model status separately and retries the
+  status check every five seconds while the app is open.
+- Browser speech recognition may send audio to the speech provider selected by
+  the browser; Atlas does not process voice audio on its backend.
 - Responsive layouts, keyboard focus styles, and reduced-motion preferences are
   supported. The visual core uses CSS and SVG; no generated image asset is needed.
 

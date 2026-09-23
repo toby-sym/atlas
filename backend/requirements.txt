@@ -6,6 +6,8 @@ pydantic
 python-multipart
 beautifulsoup4
 ddgs
+pypdf
+python-docx
 pytest
 pytest-cov
 pytest-timeout

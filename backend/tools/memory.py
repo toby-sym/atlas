@@ -9,6 +9,13 @@ logger = logging.getLogger(__name__)
 DB_PATH = Path(os.getenv("ATLAS_MEMORY_DB", "backend/data/memory.db"))
 
 
+def set_memory_path(path: str) -> None:
+    # This is initialized once by the API from loaded desktop configuration.
+    # pylint: disable=global-statement
+    global DB_PATH
+    DB_PATH = Path(path)
+
+
 # Connects to SQLite DB and ensures the memories table exists.
 def _get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

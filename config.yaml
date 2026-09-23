@@ -4,20 +4,11 @@ model: "qwen3:4b"
 tools:
   filesystem:
     enabled: true
-    path: "./"
+    path: "./workspace"
   web_search:
-    enabled: false
-    api_key: "YOUR_TAVILY_API_KEY"
-  calendar:
-    enabled: false
-    credentials:
-      type: "google"
-      client_id: ""
-      client_secret: ""
+    enabled: true
 
 memory:
+  enabled: true
   type: sqlite
-  path: "./memory.db"
-memory_prompt: |
-  - Save durable facts
-  - Check memory early in conversations
+  path: "./data/memory.db"

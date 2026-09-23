@@ -11,13 +11,17 @@ A local-first AI agent with a React frontend and a FastAPI backend, powered by a
 
 ## Installation
 
-1. Install [Ollama](https://ollama.com) and pull the model set in `config.yaml` (as of right now: `qwen3:4b`).
+1. Install [Ollama](https://ollama.com) and run `ollama pull qwen3:4b` (or pull the model set in `config.yaml`).
 2. Download the latest installer (`.exe` or `.msi`) from the [Releases](../../releases) page.
 3. Run the installer and launch Atlas.
 
 ## Configuration
 
 Backend settings (model, Ollama URL, enabled tools) live in `config.yaml`.
+The workspace accepts UTF-8 text and code files, text-based PDFs, and `.docx`
+files up to 10 MB. Scanned PDFs, legacy `.doc` files, and OCR are not supported.
+PDF and Word text extraction runs locally. Web research uses DuckDuckGo; browser
+voice recognition may use the speech provider selected by your browser.
 
 ## License
 

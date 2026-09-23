@@ -37,6 +37,8 @@ def main() -> None:
             "--onefile",
             "--name",
             "atlas-backend",
+            "--specpath",
+            str(ROOT / "build"),
             "--paths",
             str(ROOT),
             "--add-data",

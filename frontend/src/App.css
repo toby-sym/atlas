@@ -70,6 +70,36 @@
   padding: 3px 5px;
   margin: 5px 0 0 5px;
 }
+
+.selected-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(520px, 100%);
+  margin: 0 auto 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(169, 151, 250, 0.24);
+  border-radius: 999px;
+  background: rgba(31, 28, 50, 0.78);
+  color: #d7d0f6;
+  font-size: 12px;
+}
+
+.selected-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
 .workspace-switch {
   display: flex;
   align-items: center;

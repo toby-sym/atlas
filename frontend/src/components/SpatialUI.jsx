@@ -177,7 +177,7 @@ function Highlight({ code }) {
       </span>
     ));
 }
-function CodeBlock({ code, language, onRun }) {
+function CodeBlock({ code, language, onRun, actionLabel }) {
   const [copied, setCopied] = useState(false),
     [diff, setDiff] = useState(false),
     [copyError, setCopyError] = useState(false);
@@ -212,10 +212,10 @@ function CodeBlock({ code, language, onRun }) {
           </button>
           <button
             onClick={() => onRun?.(code)}
-            title="Preview example output or ask Atlas how to run this code"
+            title="Prepare a request for Atlas to explain how to run this code safely"
           >
             <Icon name="play" size={12} />
-            Run
+            {actionLabel}
           </button>
         </div>
       </div>
@@ -241,7 +241,7 @@ function CodeBlock({ code, language, onRun }) {
     </div>
   );
 }
-export function Message({ message, streaming, onRun }) {
+export function Message({ message, streaming, onRun, runLabel = "Ask Atlas" }) {
   return (
     <article
       className={`message-card ${message.role === "user" ? "user-message" : "assistant-message glass"} ${streaming ? "streaming" : ""}`}
@@ -271,6 +271,7 @@ export function Message({ message, streaming, onRun }) {
                   code={content}
                   language={className?.replace("language-", "")}
                   onRun={onRun}
+                  actionLabel={runLabel}
                 />
               ) : (
                 <code>{children}</code>
@@ -289,7 +290,7 @@ export function Message({ message, streaming, onRun }) {
     </article>
   );
 }
-export function Telemetry({ connection, phase, messages, files, onClose }) {
+export function Telemetry({ connection, modelStatus, modelName, phase, messages, files, onClose }) {
   return (
     <aside className="telemetry glass" aria-label="System telemetry">
       <div className="telemetry-heading">
@@ -318,6 +319,10 @@ export function Telemetry({ connection, phase, messages, files, onClose }) {
               : "Backend unavailable"}
         </div>
         <p>Atlas connects to the model running on your machine.</p>
+        <div className="metric">
+          <span>Configured model</span>
+          <strong>{modelStatus === "ready" ? modelName : modelStatus}</strong>
+        </div>
       </div>
       <div className="telemetry-section">
         <div className="nav-label">CURRENT ACTIVITY</div>

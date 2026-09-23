@@ -7,9 +7,10 @@ import {
   Message,
   Telemetry,
 } from "./components/SpatialUI";
+import { backendHeaders, resolveBackend } from "./backendClient";
 import "./App.css";
 
-const API = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.0-dev";
 const suggestions = [
   {
     icon: "globe",
@@ -47,29 +48,59 @@ export default function App() {
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("idle");
   const [connection, setConnection] = useState("checking");
+  const [modelStatus, setModelStatus] = useState("checking");
+  const [modelName, setModelName] = useState("qwen3:4b");
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState("");
   const [preview, setPreview] = useState(false);
   const [previewStep, setPreviewStep] = useState(0);
   const [previewContent, setPreviewContent] = useState("");
   const [context, setContext] = useState({ research: false, memory: false });
+  const [contextFeatures, setContextFeatures] = useState({ web_research: true, memory: true, files: true });
   const [listening, setListening] = useState(false);
   const [started, setStarted] = useState(null);
   const inputRef = useRef(null),
     fileRef = useRef(null),
     feedRef = useRef(null),
     requestRef = useRef(null),
-    speechRef = useRef(null);
+    speechRef = useRef(null),
+    apiRef = useRef(null);
   const busy = phase !== "idle";
 
   useEffect(() => {
+    let cancelled = false;
+    let timer;
     const controller = new AbortController();
-    fetch(`${API}/health`, { signal: controller.signal })
-      .then((r) => setConnection(r.ok ? "online" : "offline"))
-      .catch(() => {
-        if (!controller.signal.aborted) setConnection("offline");
-      });
+    async function checkStatus() {
+      try {
+        const connectionInfo = apiRef.current || await resolveBackend();
+        apiRef.current = connectionInfo;
+        const response = await fetch(`${connectionInfo.baseUrl}/status`, {
+          headers: backendHeaders(connectionInfo.token),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Backend unavailable");
+        const result = await response.json();
+        if (!cancelled) {
+          setConnection("online");
+          setModelStatus(result.model?.state || "unavailable");
+          setModelName(result.model?.name || "qwen3:4b");
+          setContextFeatures(result.features || { web_research: true, memory: true, files: true });
+        }
+      } catch {
+        if (!cancelled && !controller.signal.aborted) {
+          setConnection("offline");
+          setModelStatus("unavailable");
+        }
+      } finally {
+        if (!cancelled) timer = setTimeout(checkStatus, 5000);
+      }
+    }
+    checkStatus();
     return () => {
+      cancelled = true;
+      clearTimeout(timer);
       controller.abort();
       requestRef.current?.abort();
       speechRef.current?.abort();
@@ -135,8 +166,10 @@ export default function App() {
     setListening(false);
     setPreview(false);
     setMessages([]);
+    setFiles([]);
     setPhase("idle");
     setInput("");
+    setSelectedFile("");
     setNotice("");
     setView("Overview");
     if (window.innerWidth <= 760) setSidebar(false);
@@ -153,23 +186,20 @@ export default function App() {
     setNotice("");
     setPhase("thinking");
     setStarted(Date.now());
-    const instructions = [
-      context.research && "Use web search and cite sources.",
-      context.memory && "Recall relevant saved memory before answering.",
-    ]
-      .filter(Boolean)
-      .join(" ");
     const payload = history.map((m) => ({ role: m.role, content: m.content }));
-    if (instructions)
-      payload[payload.length - 1] = {
-        role: "user",
-        content: `${text.trim()}\n\n${instructions}`,
-      };
+    const sentAttachment = selectedFile;
+    setSelectedFile("");
     try {
-      const response = await fetch(`${API}/chat`, {
+      const connectionInfo = apiRef.current || await resolveBackend();
+      apiRef.current = connectionInfo;
+      const response = await fetch(`${connectionInfo.baseUrl}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: payload }),
+        headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          messages: payload,
+          context,
+          attachments: sentAttachment ? [sentAttachment] : [],
+        }),
         signal: controller.signal,
       });
       const data = await response.json();
@@ -186,14 +216,15 @@ export default function App() {
         },
       ]);
       setConnection("online");
+      setModelStatus("ready");
     } catch (error) {
       if (controller.signal.aborted) return;
       setNotice(
         error.message === "Failed to fetch"
-          ? "Unable to reach Atlas. Start the local backend on port 8000, then try again."
+          ? "Unable to reach Atlas. Check that the local backend is running, then try again."
           : error.message,
       );
-      setConnection("offline");
+      if (error.message === "Failed to fetch") setConnection("offline");
     } finally {
       if (requestRef.current === controller) {
         setPhase("idle");
@@ -213,9 +244,12 @@ export default function App() {
     const body = new FormData();
     body.append("file", file);
     try {
-      const response = await fetch(`${API}/files`, {
+      const connectionInfo = apiRef.current || await resolveBackend();
+      apiRef.current = connectionInfo;
+      const response = await fetch(`${connectionInfo.baseUrl}/files`, {
         method: "POST",
         body,
+        headers: backendHeaders(connectionInfo.token),
         signal: controller.signal,
       });
       const result = await response.json();
@@ -223,6 +257,8 @@ export default function App() {
         throw new Error(result.detail || "The file could not be uploaded.");
       if (!controller.signal.aborted) {
         setFiles((current) => [...current, result.path]);
+        setSelectedFile(result.path);
+        setInput((current) => current || "Summarize the attached file and cite useful sections.");
         setNotice(`Added ${result.path} to your workspace.`);
       }
     } catch (error) {
@@ -247,6 +283,7 @@ export default function App() {
       );
       return;
     }
+    setNotice("Voice input is provided by your browser; its speech service may process audio outside Atlas.");
     const recognition = new Recognition();
     speechRef.current = recognition;
     recognition.lang = "en-US";
@@ -298,7 +335,7 @@ export default function App() {
           <span>
             atlas<span className="brand-period">.</span>
           </span>
-          <span className="version">BETA</span>
+          <span className="version">{BUILD_VERSION}</span>
         </a>
         <button
           className="workspace-switch"
@@ -379,12 +416,12 @@ export default function App() {
             </div>
             <span className="status-dot" />
           </div>
-          <button className="profile" onClick={() => setTelemetry((v) => !v)}>
+          <button className="profile" aria-label="Open system status" onClick={() => setTelemetry((v) => !v)}>
             <span className="profile-avatar">Y</span>
             <span>
               Your personal space<small>Make room for possibility</small>
             </span>
-            <Icon name="settings" size={17} />
+            <Icon name="activity" size={17} />
           </button>
         </div>
       </aside>
@@ -408,10 +445,20 @@ export default function App() {
             <span className={`connection ${connection}`}>
               <span className="status-dot" />
               {connection === "online"
-                ? "System connected"
+                ? "Backend connected"
                 : connection === "checking"
                   ? "Connecting"
-                  : "Local mode"}
+                  : "Backend unavailable"}
+            </span>
+            <span className={`connection ${modelStatus === "ready" ? "online" : modelStatus === "checking" ? "checking" : "offline"}`}>
+              <span className="status-dot" />
+              {modelStatus === "ready"
+                ? `Model ready: ${modelName}`
+                : modelStatus === "missing"
+                  ? `Run ollama pull ${modelName}`
+                  : modelStatus === "checking"
+                    ? "Checking model"
+                    : "Start Ollama to chat"}
             </span>
             <button
               className={`icon-button ${telemetry ? "active" : ""}`}
@@ -588,6 +635,7 @@ export default function App() {
                     <Message
                       message={{ role: "assistant", content: previewContent }}
                       streaming={phase === "streaming"}
+                      runLabel="Preview output"
                       onRun={() =>
                         setNotice(
                           'Example output: { ideas: [], inProgress: ["Something extraordinary"], readyToShare: [] }',
@@ -673,12 +721,14 @@ export default function App() {
                 </h2>
                 <p>
                   {view === "Memory"
-                    ? "Bring saved preferences, project notes, and useful facts into the conversation."
+                    ? contextFeatures.memory
+                      ? "Bring saved preferences, project notes, and useful facts into the conversation."
+                      : "Memory is disabled in the current configuration."
                     : "Files added here are saved to the Atlas workspace on your machine."}
                 </p>
                 <button
                   className="primary-button"
-                  disabled={busy}
+                  disabled={busy || (view === "Memory" && !contextFeatures.memory) || (view === "Workspace" && !contextFeatures.files)}
                   onClick={() =>
                     view === "Memory"
                       ? sendMessage(
@@ -697,9 +747,10 @@ export default function App() {
                       <button
                         key={file}
                         onClick={() =>
-                          selectPrompt(
-                            `Read the file ${file} and summarize its contents.`,
-                          )
+                          (() => {
+                            setSelectedFile(file);
+                            selectPrompt("Summarize the attached file and cite useful sections.");
+                          })()
                         }
                       >
                         <Icon name="file" size={17} />
@@ -736,6 +787,7 @@ export default function App() {
               onClick={() =>
                 setContext((c) => ({ ...c, research: !c.research }))
               }
+              disabled={!contextFeatures.web_research}
             >
               <Icon name="globe" size={13} />
               Web research
@@ -747,6 +799,7 @@ export default function App() {
               }
               aria-pressed={context.memory}
               onClick={() => setContext((c) => ({ ...c, memory: !c.memory }))}
+              disabled={!contextFeatures.memory}
             >
               <Icon name="memory" size={13} />
               Memory
@@ -760,6 +813,13 @@ export default function App() {
               Local workspace
             </button>
           </div>
+          {selectedFile && (
+            <div className="selected-file">
+              <Icon name="file" size={14} />
+              <span>Attached: {selectedFile}</span>
+              <button type="button" aria-label="Remove attached file" onClick={() => setSelectedFile("")}><Icon name="close" size={12} /></button>
+            </div>
+          )}
           <form
             className={`luminary-dock ${listening ? "listening" : ""}`}
             onSubmit={(e) => {
@@ -771,7 +831,7 @@ export default function App() {
               type="button"
               className="dock-add"
               aria-label="Add a file to the workspace"
-              disabled={busy}
+              disabled={busy || !contextFeatures.files}
               onClick={() => fileRef.current?.click()}
             >
               <Icon name="plus" size={21} />
@@ -856,12 +916,15 @@ export default function App() {
           hidden
           ref={fileRef}
           onChange={uploadFile}
+          accept=".txt,.md,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.c,.h,.cpp,.hpp,.sh,.ps1,.toml,.ini,.log,.sql,.env,.diff,.patch,.pdf,.docx"
           aria-label="Choose a file"
         />
       </main>
       {telemetry && (
         <Telemetry
           connection={connection}
+          modelStatus={modelStatus}
+          modelName={modelName}
           phase={phase}
           messages={messages.length}
           files={files}
