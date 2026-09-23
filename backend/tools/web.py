@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+from ddgs.exceptions import DDGSException
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def search_web(
                 "results": [],
             }
         return results
-    except Exception as e:  # DDGS may raise provider and transport exceptions.
+    except (DDGSException, httpx.HTTPError, OSError, ValueError) as e:
         logger.exception("DuckDuckGo search failed for query '%s'", query)
         return {"error": f"Web search failed: {e!s}", "results": []}
 

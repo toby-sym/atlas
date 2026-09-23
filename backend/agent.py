@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+import httpx
 from backend.tools.web import scrape_url, search_web
 from backend.tools.memory import recall_memory, save_memory
 
@@ -54,7 +55,14 @@ class ToolRegistry:
             if isinstance(result, (dict, list)):
                 return json.dumps(result)
             return str(result)
-        except Exception as e:
+        except (
+            httpx.HTTPError,
+            json.JSONDecodeError,
+            KeyError,
+            ValueError,
+            TypeError,
+            OSError,
+        ) as e:
             logger.error("Execution error in tool '%s': %s", name, e, exc_info=True)
             return f"Error executing tool '{name}': {e!s}"
 
@@ -66,9 +74,9 @@ def prune_messages(
     if len(messages) <= max_history + 1:
         return messages
     system_msgs = [m for m in messages if m.get("role") == "system"]
-    recent_msgs = [
-        message for message in messages if message.get("role") != "system"
-    ][-max_history:]
+    recent_msgs = [message for message in messages if message.get("role") != "system"][
+        -max_history:
+    ]
     return system_msgs + recent_msgs
 
 
