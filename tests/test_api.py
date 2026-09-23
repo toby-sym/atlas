@@ -1,3 +1,5 @@
+# pylint: disable=protected-access
+
 from pathlib import Path
 from io import BytesIO
 import asyncio
@@ -6,6 +8,7 @@ import httpx
 
 from docx import Document
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 from backend import main
 from backend.tools import filesystem
@@ -225,8 +228,6 @@ def test_upload_and_extract_text_pdf_and_reject_scanned_pdf(monkeypatch, tmp_pat
     )
     assert response.status_code == 200
     assert "PDF content" in filesystem.read_file("brief.pdf")
-
-    from pypdf import PdfWriter
 
     writer = PdfWriter()
     writer.add_blank_page(width=72, height=72)
