@@ -39,6 +39,7 @@ jobs:
       ref: ${{ steps.version.outputs.ref }}
       channel: ${{ steps.version.outputs.channel }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      version_script: ${{ steps.helper.outputs.script }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,12 +53,12 @@ jobs:
           BUILD_TYPE: ${{ inputs.build_type }}
           TAG_NAME: ${{ inputs.tag_name }}
         run: node scripts/version.cjs prepare
-      # Keep the version helper available even when building an older release tag.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: build-version-script-${{ github.run_id }}
-          path: scripts/version.cjs
-          overwrite: true
+      # Pass the helper as a job output so platform jobs can build old tags
+      # without exposing this internal file in the run's downloadable artifacts.
+      - name: Pass version helper to platform jobs
+        id: helper
+        run: |
+          node -e 'const fs = require("node:fs"); const script = fs.readFileSync("scripts/version.cjs").toString("base64"); fs.appendFileSync(process.env.GITHUB_OUTPUT, "script=" + script + String.fromCharCode(10));'
 
   windows:
     needs: prepare
@@ -85,10 +86,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: build-version-script-${{ github.run_id }}
-          path: .atlas-build
+      - name: Restore version helper
+        env:
+          VERSION_SCRIPT_BASE64: ${{ needs.prepare.outputs.version_script }}
+        run: |
+          node -e 'const fs = require("node:fs"); fs.mkdirSync(".atlas-build", { recursive: true }); fs.writeFileSync(".atlas-build/version.cjs", Buffer.from(process.env.VERSION_SCRIPT_BASE64, "base64"));'
 
       - name: Apply resolved app version
         run: node .atlas-build/version.cjs apply
@@ -172,10 +174,11 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: build-version-script-${{ github.run_id }}
-          path: .atlas-build
+      - name: Restore version helper
+        env:
+          VERSION_SCRIPT_BASE64: ${{ needs.prepare.outputs.version_script }}
+        run: |
+          node -e 'const fs = require("node:fs"); fs.mkdirSync(".atlas-build", { recursive: true }); fs.writeFileSync(".atlas-build/version.cjs", Buffer.from(process.env.VERSION_SCRIPT_BASE64, "base64"));'
 
       - name: Apply resolved app version
         run: node .atlas-build/version.cjs apply
@@ -258,10 +261,11 @@ jobs:
             build-essential \
             libssl-dev
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: build-version-script-${{ github.run_id }}
-          path: .atlas-build
+      - name: Restore version helper
+        env:
+          VERSION_SCRIPT_BASE64: ${{ needs.prepare.outputs.version_script }}
+        run: |
+          node -e 'const fs = require("node:fs"); fs.mkdirSync(".atlas-build", { recursive: true }); fs.writeFileSync(".atlas-build/version.cjs", Buffer.from(process.env.VERSION_SCRIPT_BASE64, "base64"));'
 
       - name: Apply resolved app version
         run: node .atlas-build/version.cjs apply
