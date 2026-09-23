@@ -1,5 +1,5 @@
 name: Build Pipeline
-run-name: ${{ github.event_name == 'push' && format('release {0}', github.ref_name) || (inputs.build_type == 'release' && format('release {0}', inputs.tag_name || github.ref_name) || 'dev') }}
+run-name: ${{ github.event_name == 'push' && format('release {0}', github.ref_name) || (inputs.build_type == 'release' && format('release {0}', inputs.tag_name || github.ref_name) || (inputs.build_type == 'beta' && format('beta {0}', inputs.tag_name || 'next') || 'dev')) }}
 
 on:
   push:
@@ -15,8 +15,9 @@ on:
         options:
           - dev
           - release
+          - beta
       tag_name:
-        description: "Release Tag (required if build_type is release)"
+        description: "Release tag, or beta base version (e.g. v0.2.0; beta defaults to Version.properties)"
         required: false
         type: string
 
@@ -24,10 +25,52 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    # Serialize reservations, not the long platform builds. Each run gets one
+    # counter, and all platforms consume the same pinned commit and version.
+    concurrency:
+      group: atlas-version-${{ inputs.build_type == 'beta' && 'beta' || github.run_id }}
+      cancel-in-progress: false
+      queue: max
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      ref: ${{ steps.version.outputs.ref }}
+      channel: ${{ steps.version.outputs.channel }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Resolve version and reserve beta counter
+        id: version
+        env:
+          BUILD_TYPE: ${{ inputs.build_type }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: node scripts/version.cjs prepare
+      # Keep the version helper available even when building an older release tag.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-version-script-${{ github.run_id }}
+          path: scripts/version.cjs
+          overwrite: true
+
   windows:
+    needs: prepare
+    env:
+      BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      REACT_APP_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      REACT_APP_BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -42,23 +85,13 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Set app version from tag
-        shell: bash
-        run: |
-          RAW_TAG="${{ inputs.tag_name || github.ref_name }}"
-          if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${RAW_TAG#v}"
-          else
-            VERSION="0.0.0-${{ github.run_number }}"
-          fi
-          echo "Building version $VERSION"
-          node -e "
-            const fs = require('fs');
-            const path = 'src-tauri/tauri.conf.json';
-            const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
-            conf.version = '$VERSION';
-            fs.writeFileSync(path, JSON.stringify(conf, null, 2));
-          "
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-version-script-${{ github.run_id }}
+          path: .atlas-build
+
+      - name: Apply resolved app version
+        run: node .atlas-build/version.cjs apply
 
       - name: Install frontend and Tauri dependencies
         run: |
@@ -75,7 +108,7 @@ jobs:
         run: npm run desktop:build
 
       - name: Upload dev artifacts
-        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'dev'
+        if: needs.prepare.outputs.channel == 'dev'
         uses: actions/upload-artifact@v4
         with:
           name: windows-dev-build
@@ -84,16 +117,26 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
 
       - name: Publish release assets
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'release')
+        if: needs.prepare.outputs.channel != 'dev'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.ref }}
+          name: Atlas ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare.outputs.channel == 'beta' && 'false' || 'true' }}
           generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
 
   macos:
+    needs: prepare
+    env:
+      BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      REACT_APP_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      REACT_APP_BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
     strategy:
       matrix:
         include:
@@ -106,6 +149,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -120,23 +165,13 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - name: Set app version from tag
-        shell: bash
-        run: |
-          RAW_TAG="${{ inputs.tag_name || github.ref_name }}"
-          if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${RAW_TAG#v}"
-          else
-            VERSION="0.0.0-${{ github.run_number }}"
-          fi
-          echo "Building version $VERSION"
-          node -e "
-            const fs = require('fs');
-            const path = 'src-tauri/tauri.conf.json';
-            const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
-            conf.version = '$VERSION';
-            fs.writeFileSync(path, JSON.stringify(conf, null, 2));
-          "
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-version-script-${{ github.run_id }}
+          path: .atlas-build
+
+      - name: Apply resolved app version
+        run: node .atlas-build/version.cjs apply
 
       - name: Install frontend and Tauri dependencies
         run: |
@@ -153,25 +188,37 @@ jobs:
         run: npm run desktop:build
 
       - name: Upload dev artifacts
-        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'dev'
+        if: needs.prepare.outputs.channel == 'dev'
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-dev-build
           path: src-tauri/target/release/bundle/dmg/*.dmg
 
       - name: Publish release assets
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'release')
+        if: needs.prepare.outputs.channel != 'dev'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.ref }}
+          name: Atlas ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare.outputs.channel == 'beta' && 'false' || 'true' }}
           generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
 
   linux:
+    needs: prepare
+    env:
+      BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      REACT_APP_BUILD_VERSION: ${{ needs.prepare.outputs.version }}
+      REACT_APP_BUILD_CHANNEL: ${{ needs.prepare.outputs.channel }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -197,23 +244,13 @@ jobs:
             build-essential \
             libssl-dev
 
-      - name: Set app version from tag
-        shell: bash
-        run: |
-          RAW_TAG="${{ inputs.tag_name || github.ref_name }}"
-          if [[ "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            VERSION="${RAW_TAG#v}"
-          else
-            VERSION="0.0.0-${{ github.run_number }}"
-          fi
-          echo "Building version $VERSION"
-          node -e "
-            const fs = require('fs');
-            const path = 'src-tauri/tauri.conf.json';
-            const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
-            conf.version = '$VERSION';
-            fs.writeFileSync(path, JSON.stringify(conf, null, 2));
-          "
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-version-script-${{ github.run_id }}
+          path: .atlas-build
+
+      - name: Apply resolved app version
+        run: node .atlas-build/version.cjs apply
 
       - name: Install frontend and Tauri dependencies
         run: |
@@ -230,7 +267,7 @@ jobs:
         run: npm run desktop:build
 
       - name: Upload dev artifacts
-        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'dev'
+        if: needs.prepare.outputs.channel == 'dev'
         uses: actions/upload-artifact@v4
         with:
           name: linux-dev-build
@@ -239,10 +276,14 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
 
       - name: Publish release assets
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'release')
+        if: needs.prepare.outputs.channel != 'dev'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.ref }}
+          name: Atlas ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare.outputs.channel == 'beta' && 'false' || 'true' }}
           generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/deb/*.deb

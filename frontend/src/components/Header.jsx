@@ -1,4 +1,6 @@
 function Header({ status, onClearChat }) {
+  const buildVersion = process.env.REACT_APP_BUILD_VERSION;
+  const isBeta = process.env.REACT_APP_BUILD_CHANNEL === 'beta';
   const statusText = {
     online: 'Operational',
     thinking: 'Analyzing',
@@ -27,6 +29,11 @@ function Header({ status, onClearChat }) {
             <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${badgeClasses}`}>
               {statusText}
             </span>
+            {buildVersion && (
+              <span className={`rounded-full border px-2.5 py-1 font-mono text-[10px] ${isBeta ? 'border-violet-400/40 bg-violet-400/10 text-violet-200' : 'border-slate-600 text-slate-400'}`}>
+                {buildVersion}
+              </span>
+            )}
           </div>
         </div>
       </div>
