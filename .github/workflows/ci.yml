@@ -19,3 +19,13 @@ jobs:
 
   version-test:
     uses: ./.github/workflows/version-test.yml
+
+  dev-build:
+    name: Dev build
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    needs: [lint-and-format, backend-test, frontend-test, version-test]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build.yml
+    with:
+      build_type: dev
