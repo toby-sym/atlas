@@ -11,3 +11,4 @@ src-tauri/target/
 src-tauri/binaries/*.exe
 build/
 dist/
+backend/data/memory.db
