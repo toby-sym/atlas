@@ -4,8 +4,8 @@ import ToolBadge from './ToolBadge';
 
 function ChatWindow({ messages, loading, toolStatus }) {
   return (
-    <div className="flex-1 overflow-y-auto bg-gradient-to-b from-slate-950/90 via-[#060D1D] to-slate-950 px-4 py-6">
-      <div className="mx-auto max-w-3xl">
+    <div className="min-h-full bg-gradient-to-b from-slate-950/90 via-[#060D1D] to-slate-950 px-4 py-6">
+      <div className={`mx-auto w-full max-w-3xl ${messages.length === 0 ? 'flex min-h-full items-center justify-center' : ''}`}>
         {messages.length === 0 && !loading && (
           <div className="flex h-full min-h-[220px] items-center justify-center">
             <div className="animate-panel-enter rounded-2xl border border-slate-700/80 bg-slate-900/70 px-6 py-5 text-center shadow-[0_20px_60px_rgba(2,6,23,0.55)] backdrop-blur-md">
