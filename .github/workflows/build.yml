@@ -379,7 +379,9 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
       - name: Build Linux installers
-        run: npm run desktop:build
+        # The sidecar was built and smoke-tested above. Limit Tauri to the two
+        # shipped formats; "all" also builds an unused RPM (over 30 minutes).
+        run: npx --no-install tauri build --bundles deb,appimage
 
       - name: Upload dev artifacts
         if: needs.prepare.outputs.channel == 'dev'
