@@ -1433,6 +1433,39 @@
 .file-list button > svg:last-child {
   margin-left: auto;
 }
+.empty-file-list { margin: 12px 0; text-align: left; }
+.workspace-file {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid #ffffff08;
+}
+.file-list .workspace-file-open {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-file-open span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c9bbd5;
+}
+.workspace-file-open small {
+  display: block;
+  margin-top: 4px;
+  color: #797187;
+  font-size: 9px;
+}
+.file-list .workspace-file-delete {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 10px;
+  color: #8f829d;
+  cursor: pointer;
+}
+.file-list .workspace-file-delete:hover { color: #e2a7b0; }
 .memory-toolbar {
   display: flex;
   align-items: center;
