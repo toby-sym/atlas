@@ -360,15 +360,15 @@ export function Telemetry({ connection, modelStatus, modelName, phase, messages,
         </div>
         <div className="metric">
           <span>GPU utilization{hardware?.gpu_available && hardware.gpu_name ? `: ${hardware.gpu_name}` : ""}</span>
-          <strong>{hardware?.gpu_available ? `${hardware.gpu_percent}%` : "Unavailable"}</strong>
+          <strong>{Number.isFinite(hardware?.gpu_percent) ? `${hardware.gpu_percent}%` : "Unavailable"}</strong>
         </div>
         <div className="meter"><span style={{ width: `${Math.min(100, Math.max(0, hardware?.gpu_percent || 0))}%` }} /></div>
         <div className="metric">
           <span>GPU memory (VRAM)</span>
-          <strong>{hardware?.gpu_available ? `${hardware.gpu_memory_used_gb} / ${hardware.gpu_memory_total_gb} GB` : "Unavailable"}</strong>
+          <strong>{Number.isFinite(hardware?.gpu_memory_total_gb) ? `${hardware.gpu_memory_used_gb} / ${hardware.gpu_memory_total_gb} GB` : "Unavailable"}</strong>
         </div>
         <div className="meter"><span style={{ width: `${Math.min(100, Math.max(0, hardware?.gpu_memory_percent || 0))}%` }} /></div>
-        {!hardware?.gpu_available && <p>NVIDIA GPU telemetry requires the NVIDIA driver tools.</p>}
+        {!hardware?.gpu_available && <p>GPU readings use the NVIDIA, AMD SMI, or Intel XPU-SMI driver tools.</p>}
       </div>
       <div className="telemetry-section">
         <div className="nav-label">WORKSPACE TREE</div>
