@@ -33,7 +33,9 @@ def _dict_rows(value):
 
 def _gpu_result(devices, vendor: str) -> dict[str, str | float | bool | None]:
     """Normalize per-device readings; memory amounts from vendor CLIs are MiB."""
-    valid = [device for device in devices if device[1] is not None or device[3] is not None]
+    valid = [
+        device for device in devices if device[1] is not None or device[3] is not None
+    ]
     if not valid:
         return {"gpu_available": False}
 
@@ -45,7 +47,10 @@ def _gpu_result(devices, vendor: str) -> dict[str, str | float | bool | None]:
     return {
         "gpu_available": True,
         "gpu_name": names[0] if len(names) == 1 else f"{vendor} ({len(valid)} GPUs)",
-        "gpu_percent": round(sum(device[1] for device in utilization_devices) / len(utilization_devices), 1)
+        "gpu_percent": round(
+            sum(device[1] for device in utilization_devices) / len(utilization_devices),
+            1,
+        )
         if utilization_devices
         else None,
         "gpu_memory_used_gb": round(used / 1024, 1) if memory_devices else None,
@@ -103,7 +108,9 @@ def _amd_snapshot() -> dict[str, str | float | bool | None]:
         data = json.loads(output)
         devices = []
         for row in _dict_rows(data):
-            fields = {re.sub(r"[^a-z]", "", key.lower()): value for key, value in row.items()}
+            fields = {
+                re.sub(r"[^a-z]", "", key.lower()): value for key, value in row.items()
+            }
             utilization = _number(fields.get("gfxutil"))
             used = _number(fields.get("vramused", fields.get("gttused")))
             total = _number(fields.get("vramtotal", fields.get("gtttotal")))
@@ -139,7 +146,9 @@ def _intel_snapshot() -> dict[str, str | float | bool | None]:
             used = _number(fields.get("memoryused"))
             total = _number(fields.get("memorytotal"))
             if utilization is not None or total is not None:
-                devices.append((str(fields.get("name") or ""), utilization, used, total))
+                devices.append(
+                    (str(fields.get("name") or ""), utilization, used, total)
+                )
         return _gpu_result(devices, "Intel")
     except (ValueError, csv.Error):
         return {"gpu_available": False}
