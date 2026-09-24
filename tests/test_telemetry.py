@@ -1,5 +1,7 @@
 """Tests for the optional vendor GPU telemetry probes."""
 
+# pylint: disable=protected-access
+
 import json
 from types import SimpleNamespace
 
