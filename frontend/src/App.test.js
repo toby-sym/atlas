@@ -148,7 +148,7 @@ test("shows the active beta build version in the header", async () => {
   expect(screen.getByText(process.env.REACT_APP_BUILD_VERSION || "0.4.1-dev")).toBeInTheDocument();
 });
 
-test("shows live CPU and memory readings from backend status", async () => {
+test("shows live CPU, memory, GPU, and VRAM readings from backend status", async () => {
   fetch.mockResolvedValue({
     ok: true,
     json: async () => ({
@@ -160,6 +160,12 @@ test("shows live CPU and memory readings from backend status", async () => {
         memory_total_gb: 16,
         memory_percent: 51.2,
         backend_rss_mb: 120.1,
+        gpu_available: true,
+        gpu_name: "Intel Arc Pro B60",
+        gpu_percent: 72.3,
+        gpu_memory_used_gb: 4.6,
+        gpu_memory_total_gb: 8,
+        gpu_memory_percent: 57.5,
       },
     }),
   });
@@ -169,6 +175,9 @@ test("shows live CPU and memory readings from backend status", async () => {
   expect(await screen.findByText("24.5%")).toBeInTheDocument();
   expect(screen.getByText("8.2 / 16 GB")).toBeInTheDocument();
   expect(screen.getByText("120.1 MB")).toBeInTheDocument();
+  expect(screen.getByText("GPU utilization: Intel Arc Pro B60")).toBeInTheDocument();
+  expect(screen.getByText("72.3%")).toBeInTheDocument();
+  expect(screen.getByText("4.6 / 8 GB")).toBeInTheDocument();
 });
 
 test("streams a partial answer before the final response arrives", async () => {

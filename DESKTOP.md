@@ -9,6 +9,12 @@ Atlas is packaged as a Tauri application. The React production build is embedded
 - Rust stable with the target for the machine being built
 - Microsoft WebView2 (normally already installed on Windows 10/11)
 
+The desktop installer bundles Atlas but does not bundle GPU vendor tools.
+GPU telemetry is optional and requires the appropriate command-line tool to be
+installed and available on `PATH` when Atlas starts. See the
+[GPU telemetry setup notes](./README.md#optional-gpu-telemetry-tools) for
+vendor-specific installation links and platform support.
+
 Install backend packaging dependencies and the frontend dependencies:
 
 ```powershell
