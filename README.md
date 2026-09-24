@@ -6,7 +6,7 @@ A local-first AI agent with a React frontend and a FastAPI backend, powered by a
 
 - Streaming chat backed by a tool-using agent loop
 - Web search and page scraping, with a research context control
-- Searchable local memory library and saved conversations (SQLite)
+- Searchable local memory library and saved conversations, with conversation search and rename (SQLite)
 - Local CPU, memory, and GPU telemetry for NVIDIA, AMD, and Intel GPUs
 - Document reading for text, code, PDF, DOCX, PNG, and JPEG, including local OCR
 - Model inference runs on your machine through Ollama

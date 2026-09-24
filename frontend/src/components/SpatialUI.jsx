@@ -31,6 +31,7 @@ const paths = {
   mic: "M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0zM5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8",
   stop: "M6 6h12v12H6z",
   copy: "M8 8h13v13H8zM16 8V3H3v13h5",
+  edit: "m16 4 4 4M5 19l4-.8L20 7.2 16.8 4 5.8 15zM14.5 6.3l3.2 3.2",
   play: "m7 4 14 8-14 8z",
   diff: "M8 3v18M4 7l4-4 4 4M16 3v18m-4-4 4 4 4-4",
   terminal: "m4 6 6 6-6 6M12 18h8",
