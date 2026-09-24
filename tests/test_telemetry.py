@@ -124,8 +124,7 @@ def test_gpu_probe_is_unavailable_when_no_vendor_tool_is_installed(monkeypatch):
         ),
         (
             "xpu-smi",
-            "utilization.gpu,memory.used,memory.total,name\n"
-            'N/A,128,1024,"Intel Arc"\n',
+            'utilization.gpu,memory.used,memory.total,name\nN/A,128,1024,"Intel Arc"\n',
         ),
     ],
 )
