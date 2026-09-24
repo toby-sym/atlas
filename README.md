@@ -9,6 +9,7 @@ A local-first AI agent with a React frontend and a FastAPI backend, powered by a
 - Searchable local memory library and saved conversations (SQLite)
 - Local CPU, memory, and GPU telemetry for NVIDIA, AMD, and Intel GPUs
 - Document reading for text, code, PDF, DOCX, PNG, and JPEG, including local OCR
+- Choose any locally installed Ollama model; your selection stays on this machine
 - Model inference runs on your machine through Ollama
 
 ## Installation

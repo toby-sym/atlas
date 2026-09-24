@@ -61,6 +61,11 @@ export default function App() {
   const [connection, setConnection] = useState("checking");
   const [modelStatus, setModelStatus] = useState("checking");
   const [modelName, setModelName] = useState("qwen3:4b");
+  const [installedModels, setInstalledModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try { return window.localStorage.getItem("atlas.selectedModel") || ""; }
+    catch { return ""; }
+  });
   const [telemetryData, setTelemetryData] = useState(null);
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState([]);
@@ -81,6 +86,11 @@ export default function App() {
   const saveQueueRef = useRef(Promise.resolve());
   const openedConversationRef = useRef(null);
   const busy = phase !== "idle";
+  const activeModel = installedModels.length
+    ? selectedModel && installedModels.includes(selectedModel)
+      ? selectedModel
+      : installedModels.includes(modelName) ? modelName : installedModels[0]
+    : selectedModel || modelName;
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +110,7 @@ export default function App() {
           setConnection("online");
           setModelStatus(result.model?.state || "unavailable");
           setModelName(result.model?.name || "qwen3:4b");
+          setInstalledModels(Array.isArray(result.model?.available) ? result.model.available : []);
           setContextFeatures(result.features || { web_research: true, memory: true, files: true });
           setTelemetryData(result.telemetry || null);
         }
@@ -265,6 +276,7 @@ export default function App() {
         headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: payload,
+          ...(activeModel !== modelName ? { model: activeModel } : {}),
           context,
           attachments: sentAttachment ? [sentAttachment.path] : [],
         }),
@@ -588,6 +600,26 @@ export default function App() {
                     ? "Checking model"
                     : "Start Ollama to chat"}
             </span>
+            <label className="model-picker">
+              <span>Model</span>
+              <select
+                aria-label="Local model"
+                value={activeModel}
+                disabled={!installedModels.length || busy}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSelectedModel(next === modelName ? "" : next);
+                  try {
+                    if (next === modelName) window.localStorage.removeItem("atlas.selectedModel");
+                    else window.localStorage.setItem("atlas.selectedModel", next);
+                  } catch { /* Model choice remains available until the app closes. */ }
+                }}
+              >
+                {installedModels.length ? installedModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                )) : <option value={activeModel}>{modelStatus === "unavailable" ? `${activeModel} · Ollama unavailable` : activeModel}</option>}
+              </select>
+            </label>
             <button
               className={`icon-button ${telemetry ? "active" : ""}`}
               onClick={() => setTelemetry((v) => !v)}
