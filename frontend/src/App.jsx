@@ -7,6 +7,7 @@ import {
   Message,
   Telemetry,
 } from "./components/SpatialUI";
+import MemoryLibrary from "./components/MemoryLibrary";
 import { backendHeaders, readChatEvents, resolveBackend } from "./backendClient";
 import "./App.css";
 
@@ -818,6 +819,8 @@ export default function App() {
                 </>
               )}
             </div>
+          ) : view === "Memory" ? (
+            <MemoryLibrary enabled={contextFeatures.memory} connection={connection} />
           ) : (
             <div className="library-content">
               <div className="page-heading">

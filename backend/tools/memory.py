@@ -52,6 +52,59 @@ def save_memory(key: str, value: str, category: str = "general") -> str:
         return f"Error saving memory: {e}"
 
 
+def list_memories() -> List[Dict[str, Any]]:
+    """Return every saved memory for the local library."""
+    with _get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, key, value, category, updated_at FROM memories "
+            "ORDER BY updated_at DESC, id DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_memory(key: str, value: str, category: str) -> Dict[str, Any]:
+    """Create a memory without replacing an existing key."""
+    with _get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "INSERT INTO memories (key, value, category) VALUES (?, ?, ?)",
+            (key, value, category),
+        )
+        row = conn.execute(
+            "SELECT id, key, value, category, updated_at FROM memories WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+def update_memory(
+    memory_id: int, key: str, value: str, category: str
+) -> Dict[str, Any] | None:
+    """Update one saved memory, returning None when it no longer exists."""
+    with _get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "UPDATE memories SET key = ?, value = ?, category = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (key, value, category, memory_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute(
+            "SELECT id, key, value, category, updated_at FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+    return dict(row)
+
+
+def delete_memory(memory_id: int) -> bool:
+    """Delete one saved memory and report whether it existed."""
+    with _get_db() as conn:
+        cursor = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        return cursor.rowcount > 0
+
+
 # Recall memories from DB
 def recall_memory(query: str = "") -> List[Dict[str, Any]]:
     # Retrieves memories either matching query or most recent 20 entries.
