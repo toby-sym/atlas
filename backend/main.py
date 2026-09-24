@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
@@ -13,7 +14,7 @@ import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from backend import conversations as conversation_store
 from backend.agent import AgentServiceError, run_agent_loop, stream_agent_loop
@@ -27,6 +28,7 @@ from backend.settings import (
     WEB_ENABLED,
     WORKSPACE_PATH,
 )
+from backend.tools import memory as memory_store
 from backend.telemetry import snapshot as telemetry_snapshot
 from backend.tools.filesystem import (
     MAX_EXTRACTED_CHARS,
@@ -34,9 +36,9 @@ from backend.tools.filesystem import (
     SUPPORTED_SUFFIXES,
     _resolve_path,
     extract_file,
+    set_workspace_path,
 )
 from backend.tools.memory import set_memory_path
-from backend.tools.filesystem import set_workspace_path
 
 set_workspace_path(WORKSPACE_PATH)
 set_memory_path(MEMORY_PATH)
@@ -99,6 +101,28 @@ class ConversationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: StrictStr = Field(..., min_length=1, max_length=120)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=1000)
+
+
+class MemoryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: StrictStr = Field(..., min_length=1, max_length=200)
+    value: StrictStr = Field(..., min_length=1, max_length=10000)
+    category: StrictStr = Field(default="general", min_length=1, max_length=64)
+
+    @field_validator("key", "category")
+    @classmethod
+    def strip_required_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def require_memory_value(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Memory details cannot be blank.")
+        return value
 
 
 def _conversation_id(value: str) -> str:
@@ -192,6 +216,85 @@ async def delete_saved_conversation(conversation_id: str):
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"deleted": True}
+
+
+def _require_memory_feature() -> None:
+    if not MEMORY_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Memory is disabled in the current configuration.",
+        )
+
+
+@app.get("/memories")
+async def list_saved_memories():
+    _require_memory_feature()
+    try:
+        memories = await asyncio.to_thread(memory_store.list_memories)
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not load saved memories."
+        ) from exc
+    return {"memories": memories}
+
+
+@app.post("/memories", status_code=201)
+async def create_saved_memory(payload: MemoryPayload):
+    _require_memory_feature()
+    try:
+        memory = await asyncio.to_thread(
+            memory_store.create_memory,
+            payload.key,
+            payload.value,
+            payload.category,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409, detail="A memory with this name already exists."
+        ) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not save this memory."
+        ) from exc
+    return {"memory": memory}
+
+
+@app.put("/memories/{memory_id}")
+async def update_saved_memory(memory_id: int, payload: MemoryPayload):
+    _require_memory_feature()
+    try:
+        memory = await asyncio.to_thread(
+            memory_store.update_memory,
+            memory_id,
+            payload.key,
+            payload.value,
+            payload.category,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409, detail="A memory with this name already exists."
+        ) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not update this memory."
+        ) from exc
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return {"memory": memory}
+
+
+@app.delete("/memories/{memory_id}")
+async def delete_saved_memory(memory_id: int):
+    _require_memory_feature()
+    try:
+        deleted = await asyncio.to_thread(memory_store.delete_memory, memory_id)
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not delete this memory."
+        ) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory not found.")
     return {"deleted": True}
 
 
