@@ -32,7 +32,7 @@ npm run desktop:dev
 
 ## Releases
 
-Pushing a tag such as `v0.4.0` starts `.github/workflows/build.yml`. It builds
+Pushing a tag such as `v0.4.1` starts `.github/workflows/build.yml`. It builds
 Windows (NSIS and MSI), macOS (Apple Silicon and Intel DMG), and Linux (DEB and
 AppImage) installers. You can also select **Actions → Build Pipeline → Run
 workflow** and choose a build type:
@@ -40,19 +40,19 @@ workflow** and choose a build type:
 | Build type | Version | Destination |
 | --- | --- | --- |
 | `dev` | `0.0.0-<run number>` | Workflow artifacts only |
-| `release` | Required release tag, e.g. `v0.4.0` | Normal GitHub Release |
-| `beta` | Next available number, currently `v0.4.0-beta.3` | GitHub prerelease; never marked Latest |
+| `release` | Required release tag, e.g. `v0.4.1` | Normal GitHub Release |
+| `beta` | Next available number, currently `v0.4.1-beta.1` | GitHub prerelease; never marked Latest |
 
 For a beta, select a **branch** and leave the tag input empty to use the base
 version in the repository-root `Version.properties`:
 
 ```properties
-version=0.4.0
-beta=2
+version=0.4.1
+beta=0
 ```
 
-`beta` is the **last reserved number**, so `2` produces `0.4.0-beta.3` next.
-Alternatively, enter a base version such as `v0.4.0` in the tag input. The
+`beta` is the **last reserved number**, so `0` produces `0.4.1-beta.1` next.
+Alternatively, enter a base version such as `v0.4.1` in the tag input. The
 workflow writes that base back to the properties file and starts its counter
 at 1, or after any existing beta tags for that version. You can also change
 `version` and reset `beta=0` in a normal commit to begin a new version series.

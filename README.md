@@ -7,7 +7,7 @@ A local-first AI agent with a React frontend and a FastAPI backend, powered by a
 - Streaming chat backed by a tool-using agent loop
 - Web search and page scraping, with a research context control
 - Persistent memory and saved conversations (SQLite)
-- Local CPU and memory telemetry
+- Local CPU, memory, and NVIDIA GPU telemetry
 - Document reading for text, code, PDF, DOCX, PNG, and JPEG, including local OCR
 - Model inference runs on your machine through Ollama
 
@@ -27,7 +27,8 @@ characters, and OCR is limited to 10 image pages per PDF. PDF, Word, and OCR
 extraction run locally. Web research uses DuckDuckGo; browser voice recognition
 may use the speech provider selected by your browser. Saved conversations and
 memories stay on this machine. CPU and memory readings are available in the
-Telemetry panel; GPU and VRAM readings are not yet available.
+Telemetry panel. NVIDIA GPU utilization and VRAM readings are shown when the
+NVIDIA driver tools are available on the machine.
 
 ## License
 
