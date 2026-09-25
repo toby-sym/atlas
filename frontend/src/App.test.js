@@ -69,6 +69,9 @@ test("sends original text, typed preferences, and selected attachment", async ()
   expect(request).toEqual({
     messages: [{ role: "user", content: "Plan my project" }],
     project_id: "general",
+    conversation_id: expect.stringMatching(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    ),
     context: { research: true, memory: false },
     attachments: [],
   });
