@@ -38,7 +38,7 @@ npm run desktop:dev
 
 ## Releases
 
-Pushing a tag such as `v0.4.1` starts `.github/workflows/build.yml`. It builds
+Pushing a tag such as `v0.4.2` starts `.github/workflows/build.yml`. It builds
 Windows (NSIS and MSI), macOS (Apple Silicon and Intel DMG), and Linux (DEB and
 AppImage) installers. You can also select **Actions → Build Pipeline → Run
 workflow** and choose a build type:
@@ -46,23 +46,39 @@ workflow** and choose a build type:
 | Build type | Version | Destination |
 | --- | --- | --- |
 | `dev` | `0.0.0-<run number>` | Workflow artifacts only |
-| `release` | Required release tag, e.g. `v0.4.1` | Normal GitHub Release |
-| `beta` | Next available number, currently `v0.4.1-beta.1` | GitHub prerelease; never marked Latest |
+| `release` | Required release tag, e.g. `v0.4.2` | Normal GitHub Release |
+| `beta` | Next available number, currently `v0.4.2-beta.1` | GitHub prerelease; never marked Latest |
 
 For a beta, select a **branch** and leave the tag input empty to use the base
 version in the repository-root `Version.properties`:
 
 ```properties
-version=0.4.1
+version=0.4.2
 beta=0
 ```
 
-`beta` is the **last reserved number**, so `0` produces `0.4.1-beta.1` next.
-Alternatively, enter a base version such as `v0.4.1` in the tag input. The
+`beta` is the **last reserved number**, so `0` produces `0.4.2-beta.1` next.
+Alternatively, enter a base version such as `v0.4.2` in the tag input. The
 workflow writes that base back to the properties file and starts its counter
 at 1, or after any existing beta tags for that version. You can also change
 `version` and reset `beta=0` in a normal commit to begin a new version series.
 Existing tags prevent numbers from being reused if a branch has an older counter.
+
+To start a release series, run **Actions → Bump Atlas Version** on `main` and
+enter the new base version (the default is `0.4.2`). The action updates the app
+version metadata and commits it to `main` with `beta=0`. The next beta build
+from `main` is then `vX.Y.Z-beta.1`, unless that version already has beta tags,
+in which case the beta workflow continues after the highest existing number.
+Use the beta build to smoke-test the development version from the generated
+GitHub prerelease. The action needs `contents: write`, and repository branch
+protection must allow the workflow bot to commit to `main`.
+
+When ready to publish, open a pull request from `main` into the manually
+maintained `release` branch and merge it. On `release`, run **Actions → Build
+Pipeline**, choose `release`, and enter the stable tag such as `v0.4.2`. The
+workflow builds that branch state and publishes the stable GitHub Release.
+This keeps version preparation and beta testing on `main`, while stable builds
+come from the reviewed `release` branch.
 
 One preparation job reserves the number for all platforms. It checks out the
 latest commit of the selected branch, commits only `Version.properties`, and
