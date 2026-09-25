@@ -1,6 +1,7 @@
 """HTTP API for the Atlas desktop and web clients."""
 
 import asyncio
+from datetime import datetime
 import hmac
 import json
 import os
@@ -11,7 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
@@ -44,7 +45,7 @@ set_workspace_path(WORKSPACE_PATH)
 set_memory_path(MEMORY_PATH)
 conversation_store.set_conversations_path(CONVERSATIONS_PATH)
 
-app = FastAPI(title="Atlas API", version="0.4.1")
+app = FastAPI(title="Atlas API", version="0.4.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -55,7 +56,7 @@ app.add_middleware(
         "https://tauri.localhost",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "X-Atlas-Token"],
 )
 
@@ -103,6 +104,19 @@ class ConversationPayload(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=1000)
 
 
+class ConversationTitlePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: StrictStr = Field(..., min_length=1, max_length=120)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Conversation title cannot be blank.")
+        return value
+
+
 class MemoryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: StrictStr = Field(..., min_length=1, max_length=200)
@@ -137,27 +151,29 @@ def _ollama_tags_url() -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "/api/tags", "", ""))
 
 
-async def _model_status() -> dict[str, str]:
+async def _model_status() -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(_ollama_tags_url())
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("models", []), list):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
     models = payload.get("models", [])
-    names = {
-        model.get("name") or model.get("model")
-        for model in models
-        if isinstance(model, dict)
-        and isinstance(model.get("name") or model.get("model"), str)
-    }
+    names = sorted(
+        {
+            model.get("name") or model.get("model")
+            for model in models
+            if isinstance(model, dict)
+            and isinstance(model.get("name") or model.get("model"), str)
+        }
+    )
     if DEFAULT_MODEL in names:
-        return {"state": "ready", "name": DEFAULT_MODEL}
-    return {"state": "missing", "name": DEFAULT_MODEL}
+        return {"state": "ready", "name": DEFAULT_MODEL, "available": names}
+    return {"state": "missing", "name": DEFAULT_MODEL, "available": names}
 
 
 @app.get("/health")
@@ -182,10 +198,15 @@ async def status():
 
 
 @app.get("/conversations")
-async def list_saved_conversations():
-    return {
-        "conversations": await asyncio.to_thread(conversation_store.list_conversations)
-    }
+async def list_saved_conversations(search: str = Query(default="", max_length=200)):
+    search = search.strip()
+    if search:
+        conversations = await asyncio.to_thread(
+            conversation_store.search_conversations, search
+        )
+    else:
+        conversations = await asyncio.to_thread(conversation_store.list_conversations)
+    return {"conversations": conversations}
 
 
 @app.get("/conversations/{conversation_id}")
@@ -207,6 +228,20 @@ async def put_saved_conversation(conversation_id: str, payload: ConversationPayl
         [message.model_dump() for message in payload.messages],
     )
     return {"saved": True}
+
+
+@app.patch("/conversations/{conversation_id}")
+async def rename_saved_conversation(
+    conversation_id: str, payload: ConversationTitlePayload
+):
+    renamed = await asyncio.to_thread(
+        conversation_store.rename_conversation,
+        _conversation_id(conversation_id),
+        payload.title,
+    )
+    if not renamed:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"renamed": True, "title": payload.title}
 
 
 @app.delete("/conversations/{conversation_id}")
@@ -332,7 +367,7 @@ async def upload_file(file: UploadFile = File(...)):
                         status_code=413, detail="Files must be 10 MB or smaller."
                     )
                 destination.write(chunk)
-        # Validate/extract before reporting success so corrupt documents fail at upload time.
+        # Validate before reporting success so corrupt documents fail at upload time.
         try:
             await asyncio.to_thread(extract_file, stored_name)
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -359,6 +394,82 @@ async def upload_file(file: UploadFile = File(...)):
         await file.close()
 
 
+@app.get("/files")
+async def list_workspace_files():
+    if not FILESYSTEM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Workspace file tools are disabled in the current configuration.",
+        )
+    try:
+        root = Path(_resolve_path("."))
+        files = []
+        for entry in root.iterdir():
+            if not entry.is_file() or entry.is_symlink():
+                continue
+            if entry.suffix.lower() not in SUPPORTED_SUFFIXES:
+                continue
+            try:
+                resolved = Path(_resolve_path(entry.name))
+                stat = resolved.stat()
+            except (OSError, ValueError):
+                continue
+            files.append(
+                {
+                    "path": entry.name,
+                    "filename": entry.name,
+                    "size_bytes": stat.st_size,
+                    "readable": stat.st_size <= MAX_FILE_BYTES,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime)
+                    .astimezone()
+                    .isoformat(timespec="minutes"),
+                }
+            )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not list workspace files."
+        ) from exc
+    return {"files": sorted(files, key=lambda item: item["modified_at"], reverse=True)}
+
+
+@app.delete("/files/{filename}")
+async def delete_workspace_file(filename: str):
+    if not FILESYSTEM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Workspace file tools are disabled in the current configuration.",
+        )
+    if (
+        Path(filename).name != filename
+        or filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise HTTPException(status_code=400, detail="Invalid workspace filename.")
+    try:
+        root = Path(_resolve_path("."))
+        source = root / filename
+        if source.is_symlink():
+            raise HTTPException(
+                status_code=400, detail="Workspace links cannot be deleted here."
+            )
+        target = Path(_resolve_path(filename))
+        if target.suffix.lower() not in SUPPORTED_SUFFIXES:
+            raise HTTPException(
+                status_code=400, detail="This file type is not supported."
+            )
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="Workspace file not found.")
+        target.unlink()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not delete workspace file."
+        ) from exc
+    return {"deleted": True}
+
+
 async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]:
     messages = [message.model_dump() for message in request.messages]
     if not any(
@@ -373,7 +484,9 @@ async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]
         if not FILESYSTEM_ENABLED:
             raise HTTPException(
                 status_code=503,
-                detail="Workspace file tools are disabled in the current configuration.",
+                detail=(
+                    "Workspace file tools are disabled in the current configuration."
+                ),
             )
         filename = request.attachments[0]
         if (

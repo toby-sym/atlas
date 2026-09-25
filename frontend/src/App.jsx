@@ -11,7 +11,7 @@ import MemoryLibrary from "./components/MemoryLibrary";
 import { backendHeaders, readChatEvents, resolveBackend } from "./backendClient";
 import "./App.css";
 
-const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.1-dev";
+const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.2-dev";
 function newConversationId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (letter) => {
@@ -48,12 +48,28 @@ const suggestions = [
 const demoText =
   'A calmer workspace starts with a little structure. I’ve grouped this example into three focused areas: **ideas**, **in progress**, and **ready to share**.\n\nHere’s a small starting point you can make your own.\n\n```javascript\nconst workspace = {\n  ideas: [],\n  inProgress: ["Something extraordinary"],\n  readyToShare: []\n};\n\nconsole.log(workspace);\n```';
 
+function formatFileSize(bytes = 0) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function formatFileDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString();
+}
+
 export default function App() {
   const [view, setView] = useState("Overview");
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
   const [telemetry, setTelemetry] = useState(false);
   const [messages, setMessages] = useState([]);
   const [savedConversations, setSavedConversations] = useState([]);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationSearchResults, setConversationSearchResults] = useState(null);
+  const [conversationSearchRevision, setConversationSearchRevision] = useState(0);
+  const [editingConversationId, setEditingConversationId] = useState(null);
+  const [conversationTitleDraft, setConversationTitleDraft] = useState("");
+  const [conversationTitles, setConversationTitles] = useState({});
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("idle");
@@ -61,6 +77,11 @@ export default function App() {
   const [connection, setConnection] = useState("checking");
   const [modelStatus, setModelStatus] = useState("checking");
   const [modelName, setModelName] = useState("qwen3:4b");
+  const [installedModels, setInstalledModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try { return window.localStorage.getItem("atlas.selectedModel") || ""; }
+    catch { return ""; }
+  });
   const [telemetryData, setTelemetryData] = useState(null);
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState([]);
@@ -81,6 +102,14 @@ export default function App() {
   const saveQueueRef = useRef(Promise.resolve());
   const openedConversationRef = useRef(null);
   const busy = phase !== "idle";
+  const visibleConversations = conversationSearch.trim()
+    ? conversationSearchResults || []
+    : savedConversations;
+  const activeModel = installedModels.length
+    ? selectedModel && installedModels.includes(selectedModel)
+      ? selectedModel
+      : installedModels.includes(modelName) ? modelName : installedModels[0]
+    : selectedModel || modelName;
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +129,7 @@ export default function App() {
           setConnection("online");
           setModelStatus(result.model?.state || "unavailable");
           setModelName(result.model?.name || "qwen3:4b");
+          setInstalledModels(Array.isArray(result.model?.available) ? result.model.available : []);
           setContextFeatures(result.features || { web_research: true, memory: true, files: true });
           setTelemetryData(result.telemetry || null);
         }
@@ -138,8 +168,43 @@ export default function App() {
       }
     }
     loadConversations();
+    async function loadWorkspaceFiles() {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setFiles(data.files || []);
+      } catch {
+        // The connection status already reports temporary backend failures.
+      }
+    }
+    loadWorkspaceFiles();
     return () => { cancelled = true; };
   }, [connection]);
+  useEffect(() => {
+    const search = conversationSearch.trim();
+    if (!search) {
+      setConversationSearchResults(null);
+      return undefined;
+    }
+    if (connection !== "online") return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/conversations?search=${encodeURIComponent(search)}`, {
+          headers: backendHeaders(info.token),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setConversationSearchResults(data.conversations || []);
+      } catch {
+        // Search remains local to this installation and retries as the query changes.
+      }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [conversationSearch, conversationSearchRevision, connection]);
   useEffect(() => {
     if (!activeConversationId || !messages.length || phase !== "idle" || connection !== "online") return;
     if (openedConversationRef.current === activeConversationId) {
@@ -147,7 +212,7 @@ export default function App() {
       return;
     }
     const id = activeConversationId;
-    const title = messages.find((message) => message.role === "user")?.content.trim().slice(0, 120) || "Conversation";
+    const title = conversationTitles[id] || messages.find((message) => message.role === "user")?.content.trim().slice(0, 120) || "Conversation";
     const snapshot = messages.map(({ role, content }) => ({ role, content }));
     let current = true;
     saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
@@ -163,12 +228,13 @@ export default function App() {
           { id, title },
           ...existing.filter((item) => item.id !== id),
         ]);
+        setConversationSearchRevision((revision) => revision + 1);
       }
     }).catch(() => {
       if (current) setNotice("Could not save this conversation locally. Retry when Atlas is connected.");
     });
     return () => { current = false; };
-  }, [activeConversationId, messages, phase, connection]);
+  }, [activeConversationId, messages, phase, connection, conversationTitles]);
   useEffect(() => {
     if (view === "Conversation")
       feedRef.current?.scrollTo?.({
@@ -230,7 +296,6 @@ export default function App() {
     setPreview(false);
     setMessages([]);
     setActiveConversationId(null);
-    setFiles([]);
     setPhase("idle");
     setToolActivity("");
     setInput("");
@@ -265,6 +330,7 @@ export default function App() {
         headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: payload,
+          ...(activeModel !== modelName ? { model: activeModel } : {}),
           context,
           attachments: sentAttachment ? [sentAttachment.path] : [],
         }),
@@ -335,11 +401,41 @@ export default function App() {
       const stored = await response.json();
       openedConversationRef.current = id;
       setActiveConversationId(id);
+      setConversationTitles((current) => ({ ...current, [id]: stored.title }));
       setMessages(stored.messages || []);
       setSelectedFile(null);
       setPhase("idle");
       setNotice("");
       setView("Conversation");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+  async function renameConversation(id, title) {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setNotice("Conversation titles cannot be blank.");
+      return;
+    }
+    if (trimmed.length > 120) {
+      setNotice("Conversation titles must be 120 characters or fewer.");
+      return;
+    }
+    try {
+      await saveQueueRef.current.catch(() => {});
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
+        method: "PATCH",
+        headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ title: trimmed }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not rename this conversation.");
+      setConversationTitles((current) => ({ ...current, [id]: trimmed }));
+      setSavedConversations((current) => current.map((saved) => saved.id === id ? { ...saved, title: trimmed } : saved));
+      setConversationSearchRevision((revision) => revision + 1);
+      setEditingConversationId(null);
+      setNotice("");
     } catch (error) {
       setNotice(error.message);
     }
@@ -354,6 +450,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Could not delete this conversation.");
       setSavedConversations((existing) => existing.filter((item) => item.id !== id));
+      setConversationSearchResults((existing) => existing?.filter((item) => item.id !== id) ?? existing);
       if (activeConversationId === id) reset();
     } catch (error) {
       setNotice(error.message);
@@ -384,7 +481,7 @@ export default function App() {
         throw new Error(result.detail || "The file could not be uploaded.");
       if (!controller.signal.aborted) {
         const uploaded = { path: result.path, filename: result.filename || result.path };
-        setFiles((current) => [...current, uploaded]);
+        await refreshWorkspaceFiles();
         setSelectedFile(uploaded);
         setInput((current) => current || "Summarize the attached file and cite useful sections.");
         setNotice(`Added ${uploaded.filename} to your workspace.`);
@@ -396,6 +493,30 @@ export default function App() {
         setPhase("idle");
         requestRef.current = null;
       }
+    }
+  }
+  async function refreshWorkspaceFiles() {
+    const info = apiRef.current || await resolveBackend();
+    const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+    if (!response.ok) throw new Error("Could not refresh workspace files.");
+    const data = await response.json();
+    setFiles(data.files || []);
+  }
+  async function deleteWorkspaceFile(file) {
+    if (!window.confirm(`Delete ${file.filename} from the Atlas workspace?`)) return;
+    try {
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/files/${encodeURIComponent(file.path)}`, {
+        method: "DELETE",
+        headers: backendHeaders(info.token),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not delete this file.");
+      setFiles((current) => current.filter((item) => item.path !== file.path));
+      setSelectedFile((current) => current?.path === file.path ? null : current);
+      setNotice(`Deleted ${file.filename} from your workspace.`);
+    } catch (error) {
+      setNotice(error.message);
     }
   }
   function toggleVoice() {
@@ -514,18 +635,47 @@ export default function App() {
           </span>
         </div>
         <div className="session-list">
-          {savedConversations.length ? (
-            savedConversations.map((saved) => (
+          <input
+            className="conversation-search"
+            type="search"
+            aria-label="Search conversations"
+            placeholder="Search conversations"
+            value={conversationSearch}
+            onChange={(event) => setConversationSearch(event.target.value)}
+          />
+          {savedConversations.length ? visibleConversations.length ? (
+            visibleConversations.map((saved) => (
               <div className="saved-session" key={saved.id}>
-                <button onClick={() => openConversation(saved.id)}>
-                  <Icon name="chat" size={14} />
-                  <span>{saved.title}</span>
-                </button>
-                <button className="delete-session" aria-label={`Delete ${saved.title}`} onClick={() => deleteConversation(saved.id)}>
-                  <Icon name="close" size={12} />
-                </button>
+                {editingConversationId === saved.id ? (
+                  <form className="rename-session" onSubmit={(event) => { event.preventDefault(); renameConversation(saved.id, conversationTitleDraft); }}>
+                    <input
+                      autoFocus
+                      aria-label={`New title for ${saved.title}`}
+                      maxLength={120}
+                      value={conversationTitleDraft}
+                      onChange={(event) => setConversationTitleDraft(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === "Escape") setEditingConversationId(null); }}
+                    />
+                    <button type="submit" aria-label={`Save title for ${saved.title}`}><Icon name="check" size={13} /></button>
+                  </form>
+                ) : (
+                  <>
+                    <button className="open-session" onClick={() => openConversation(saved.id)}>
+                      <Icon name="chat" size={14} />
+                      <span>{saved.title}</span>
+                    </button>
+                    <button className="rename-session-button" aria-label={`Rename ${saved.title}`} onClick={() => { setConversationTitleDraft(saved.title); setEditingConversationId(saved.id); }}>
+                      <Icon name="edit" size={12} />
+                    </button>
+                    <button className="delete-session" aria-label={`Delete ${saved.title}`} onClick={() => deleteConversation(saved.id)}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  </>
+                )}
               </div>
             ))
+          ) : (
+            <p>No conversations match “{conversationSearch}”.</p>
           ) : (
             <p>
               No saved conversations yet.
@@ -588,6 +738,26 @@ export default function App() {
                     ? "Checking model"
                     : "Start Ollama to chat"}
             </span>
+            <label className="model-picker">
+              <span>Model</span>
+              <select
+                aria-label="Local model"
+                value={activeModel}
+                disabled={!installedModels.length || busy}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSelectedModel(next === modelName ? "" : next);
+                  try {
+                    if (next === modelName) window.localStorage.removeItem("atlas.selectedModel");
+                    else window.localStorage.setItem("atlas.selectedModel", next);
+                  } catch { /* Model choice remains available until the app closes. */ }
+                }}
+              >
+                {installedModels.length ? installedModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                )) : <option value={activeModel}>{modelStatus === "unavailable" ? `${activeModel} · Ollama unavailable` : activeModel}</option>}
+              </select>
+            </label>
             <button
               className={`icon-button ${telemetry ? "active" : ""}`}
               onClick={() => setTelemetry((v) => !v)}
@@ -837,7 +1007,7 @@ export default function App() {
                 <p>
                   {view === "Memory"
                     ? "Atlas can save and recall context using its local memory tools."
-                    : "Add a file to your local workspace, then ask Atlas to explore it."}
+                    : "Files in your local workspace stay available across sessions. Choose one to attach it to a conversation."}
                 </p>
               </div>
               <div className="library-card glass">
@@ -855,7 +1025,7 @@ export default function App() {
                     ? contextFeatures.memory
                       ? "Bring saved preferences, project notes, and useful facts into the conversation."
                       : "Memory is disabled in the current configuration."
-                    : "Files added here are saved to the Atlas workspace on your machine."}
+                    : "Your workspace files are stored on this machine and remain available when you return."}
                 </p>
                 <button
                   className="primary-button"
@@ -871,23 +1041,27 @@ export default function App() {
                   <Icon name={view === "Memory" ? "spark" : "plus"} size={16} />
                   {view === "Memory" ? "Recall my memories" : "Add a file"}
                 </button>
-                {files.length > 0 && view === "Workspace" && (
+                {view === "Workspace" && (
                   <div className="file-list">
-                    <div className="nav-label">ADDED THIS SESSION</div>
+                    <div className="nav-label">FILES IN THIS WORKSPACE</div>
+                    {files.length === 0 && <p className="empty-file-list">No supported files in this workspace yet.</p>}
                     {files.map((file) => (
-                      <button
-                        key={file.path}
-                        onClick={() =>
-                          (() => {
+                      <div className="workspace-file" key={file.path}>
+                        <button
+                          className="workspace-file-open"
+                          onClick={() => {
                             setSelectedFile(file);
                             selectPrompt("Summarize the attached file and cite useful sections.");
-                          })()
-                        }
-                      >
-                        <Icon name="file" size={17} />
-                        {file.filename}
-                        <Icon name="arrowUpRight" size={15} />
-                      </button>
+                          }}
+                        >
+                          <Icon name="file" size={17} />
+                          <span>{file.filename}<small>{formatFileSize(file.size_bytes)} · {file.readable ? formatFileDate(file.modified_at) : "Too large to attach"}</small></span>
+                          <Icon name="arrowUpRight" size={15} />
+                        </button>
+                        <button className="workspace-file-delete" aria-label={`Delete ${file.filename}`} onClick={() => deleteWorkspaceFile(file)}>
+                          <Icon name="close" size={13} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
