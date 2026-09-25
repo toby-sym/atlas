@@ -14,6 +14,15 @@ DB_PATH = Path(os.getenv("ATLAS_MEMORY_DB", "backend/data/memory.db"))
 
 
 @dataclass(frozen=True)
+class MemoryCreateOptions:
+    """Scope and provenance fields for creating a saved memory."""
+
+    project_id: str = GENERAL_PROJECT_ID
+    source: str = "library"
+    source_conversation_id: str | None = None
+
+
+@dataclass(frozen=True)
 class MemoryUpdateOptions:
     """Scope fields for updating a memory visible in one project."""
 
@@ -149,17 +158,23 @@ def create_memory(
     key: str,
     value: str,
     category: str,
-    project_id: str = GENERAL_PROJECT_ID,
-    source: str = "library",
-    source_conversation_id: str | None = None,
+    options: MemoryCreateOptions | None = None,
 ) -> dict[str, Any]:
     """Create a memory without replacing an existing key in the same scope."""
+    options = options or MemoryCreateOptions()
     with _get_db() as conn:
         cursor = conn.execute(
             "INSERT INTO memories "
             "(key, value, category, project_id, source, source_conversation_id) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (key, value, category, project_id, source, source_conversation_id),
+            (
+                key,
+                value,
+                category,
+                options.project_id,
+                options.source,
+                options.source_conversation_id,
+            ),
         )
         row = conn.execute(
             "SELECT id, key, value, category, project_id, source, "

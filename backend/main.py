@@ -431,7 +431,7 @@ async def create_saved_memory(
             payload.key,
             payload.value,
             payload.category,
-            memory_project_id,
+            memory_store.MemoryCreateOptions(project_id=memory_project_id),
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
