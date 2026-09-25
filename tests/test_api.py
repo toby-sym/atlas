@@ -340,13 +340,11 @@ def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path)
 
     listed = client.get("/projects")
     assert listed.status_code == 200
-    assert [(project["id"], project["name"]) for project in listed.json()["projects"]] == [
-        ("general", "General")
-    ]
+    assert [
+        (project["id"], project["name"]) for project in listed.json()["projects"]
+    ] == [("general", "General")]
 
-    created = client.post(
-        "/projects", json={"name": "Launch plan"}
-    )
+    created = client.post("/projects", json={"name": "Launch plan"})
     assert created.status_code == 201, created.text
     project = created.json()["project"]
     assert project["name"] == "Launch plan"
@@ -355,9 +353,10 @@ def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path)
     assert duplicate.status_code == 409
     assert client.post("/projects", json={"name": "   "}).status_code == 422
     assert client.post("/projects", json={"name": "General"}).status_code == 422
-    assert client.patch(
-        "/projects/general", json={"name": "Everywhere"}
-    ).status_code == 400
+    assert (
+        client.patch("/projects/general", json={"name": "Everywhere"}).status_code
+        == 400
+    )
     assert client.delete("/projects/general").status_code == 400
 
     renamed = client.patch(f"/projects/{project['id']}", json={"name": "Launch"})

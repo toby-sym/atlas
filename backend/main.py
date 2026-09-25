@@ -232,7 +232,9 @@ async def create_project(payload: ProjectPayload):
             status_code=409, detail="A project with this name already exists."
         ) from exc
     except sqlite3.Error as exc:
-        raise HTTPException(status_code=500, detail="Could not create this project.") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not create this project."
+        ) from exc
     return {"project": project}
 
 
@@ -247,7 +249,9 @@ async def rename_project(project_id: str, payload: ProjectPayload):
             status_code=409, detail="A project with this name already exists."
         ) from exc
     except sqlite3.Error as exc:
-        raise HTTPException(status_code=500, detail="Could not rename this project.") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not rename this project."
+        ) from exc
     if project is None:
         raise HTTPException(
             status_code=400 if project_id == project_store.GENERAL_PROJECT_ID else 404,
@@ -263,11 +267,15 @@ async def rename_project(project_id: str, payload: ProjectPayload):
 @app.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
     if project_id == project_store.GENERAL_PROJECT_ID:
-        raise HTTPException(status_code=400, detail="The General project cannot be deleted.")
+        raise HTTPException(
+            status_code=400, detail="The General project cannot be deleted."
+        )
     try:
         deleted = await asyncio.to_thread(project_store.delete_project, project_id)
     except sqlite3.Error as exc:
-        raise HTTPException(status_code=500, detail="Could not delete this project.") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not delete this project."
+        ) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
     return {"deleted": True}
