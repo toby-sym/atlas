@@ -13,6 +13,25 @@ use uuid::Uuid;
 
 struct BackendProcess(Mutex<Option<CommandChild>>);
 
+fn kill_backend(child: CommandChild) {
+    #[cfg(windows)]
+    {
+        use std::{os::windows::process::CommandExt, process::Command};
+
+        let pid = child.pid().to_string();
+        let tree_terminated = Command::new("taskkill")
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .status()
+            .is_ok_and(|status| status.success());
+        if tree_terminated {
+            return;
+        }
+    }
+
+    let _ = child.kill();
+}
+
 #[derive(Clone, Serialize)]
 struct BackendConnection {
     base_url: String,
@@ -109,7 +128,7 @@ pub fn run() {
                     break;
                 }
                 if let Some(backend_child) = child {
-                    let _ = backend_child.kill();
+                    kill_backend(backend_child);
                 }
             }
 
@@ -129,7 +148,7 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(process) = app.try_state::<BackendProcess>() {
                     if let Some(child) = process.0.lock().unwrap().take() {
-                        let _ = child.kill();
+                        kill_backend(child);
                     }
                 }
             }
