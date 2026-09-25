@@ -7,7 +7,7 @@ on:
       version:
         description: "New Atlas base version (X.Y.Z)"
         required: true
-        default: "0.4.2"
+        default: "0.4.3"
         type: string
 
 permissions:
