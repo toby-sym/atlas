@@ -19,6 +19,7 @@ from backend.tools import filesystem
 def _client(monkeypatch, tmp_path):
     filesystem.set_workspace_path(str(tmp_path / "workspace"))
     conversations.set_conversations_path(str(tmp_path / "conversations.db"))
+    main.memory_store.set_memory_path(str(tmp_path / "memory.db"))
 
     async def model_status():
         return {"state": "unavailable", "name": main.DEFAULT_MODEL}
@@ -332,6 +333,42 @@ def test_saved_conversation_crud(monkeypatch, tmp_path):
     )
     assert client.delete(f"/conversations/{conversation_id}").status_code == 200
     assert client.get(f"/conversations/{conversation_id}").status_code == 404
+
+
+def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    listed = client.get("/projects")
+    assert listed.status_code == 200
+    assert [(project["id"], project["name"]) for project in listed.json()["projects"]] == [
+        ("general", "General")
+    ]
+
+    created = client.post(
+        "/projects", json={"name": "Launch plan"}
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()["project"]
+    assert project["name"] == "Launch plan"
+
+    duplicate = client.post("/projects", json={"name": "launch PLAN"})
+    assert duplicate.status_code == 409
+    assert client.post("/projects", json={"name": "   "}).status_code == 422
+    assert client.post("/projects", json={"name": "General"}).status_code == 422
+    assert client.patch(
+        "/projects/general", json={"name": "Everywhere"}
+    ).status_code == 400
+    assert client.delete("/projects/general").status_code == 400
+
+    renamed = client.patch(f"/projects/{project['id']}", json={"name": "Launch"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["project"]["name"] == "Launch"
+
+    deleted = client.delete(f"/projects/{project['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert [item["id"] for item in client.get("/projects").json()["projects"]] == [
+        "general"
+    ]
 
 
 def test_stream_endpoint_forwards_tokens_and_completion(monkeypatch, tmp_path):
