@@ -91,6 +91,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
     model: StrictStr | None = None
+    project_id: StrictStr = project_store.GENERAL_PROJECT_ID
     max_steps: int = Field(default=5, ge=1, le=10)
     context: ContextPreferences = Field(default_factory=ContextPreferences)
     attachments: list[StrictStr] = Field(default_factory=list, max_length=1)
@@ -104,6 +105,7 @@ class ConversationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: StrictStr = Field(..., min_length=1, max_length=120)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=1000)
+    project_id: StrictStr = project_store.GENERAL_PROJECT_ID
 
 
 class ProjectPayload(BaseModel):
@@ -161,6 +163,11 @@ def _conversation_id(value: str) -> str:
         return str(UUID(value))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid conversation ID.") from exc
+
+
+async def _require_project(project_id: str) -> None:
+    if not await asyncio.to_thread(project_store.project_exists, project_id):
+        raise HTTPException(status_code=404, detail="Project not found.")
 
 
 def _ollama_tags_url() -> str:
@@ -282,14 +289,20 @@ async def delete_project(project_id: str):
 
 
 @app.get("/conversations")
-async def list_saved_conversations(search: str = Query(default="", max_length=200)):
+async def list_saved_conversations(
+    search: str = Query(default="", max_length=200),
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
+    await _require_project(project_id)
     search = search.strip()
     if search:
         conversations = await asyncio.to_thread(
-            conversation_store.search_conversations, search
+            conversation_store.search_conversations, search, project_id
         )
     else:
-        conversations = await asyncio.to_thread(conversation_store.list_conversations)
+        conversations = await asyncio.to_thread(
+            conversation_store.list_conversations, project_id
+        )
     return {"conversations": conversations}
 
 
@@ -305,11 +318,13 @@ async def get_saved_conversation(conversation_id: str):
 
 @app.put("/conversations/{conversation_id}")
 async def put_saved_conversation(conversation_id: str, payload: ConversationPayload):
+    await _require_project(payload.project_id)
     await asyncio.to_thread(
         conversation_store.save_conversation,
         _conversation_id(conversation_id),
         payload.title,
         [message.model_dump() for message in payload.messages],
+        payload.project_id,
     )
     return {"saved": True}
 
@@ -555,6 +570,7 @@ async def delete_workspace_file(filename: str):
 
 
 async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]:
+    await _require_project(request.project_id)
     messages = [message.model_dump() for message in request.messages]
     if not any(
         message["role"] == "user" and message["content"].strip() for message in messages

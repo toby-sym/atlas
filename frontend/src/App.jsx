@@ -166,7 +166,7 @@ export default function App() {
     async function loadConversations() {
       try {
         const info = apiRef.current || await resolveBackend();
-        const response = await fetch(`${info.baseUrl}/conversations`, {
+        const response = await fetch(`${info.baseUrl}/conversations?project_id=${encodeURIComponent(activeProjectId)}`, {
           headers: backendHeaders(info.token),
         });
         if (!response.ok) return;
@@ -216,7 +216,7 @@ export default function App() {
     }
     loadWorkspaceFiles();
     return () => { cancelled = true; };
-  }, [connection]);
+  }, [connection, activeProjectId]);
   useEffect(() => {
     const search = conversationSearch.trim();
     if (!search) {
@@ -228,7 +228,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         const info = apiRef.current || await resolveBackend();
-        const response = await fetch(`${info.baseUrl}/conversations?search=${encodeURIComponent(search)}`, {
+        const response = await fetch(`${info.baseUrl}/conversations?search=${encodeURIComponent(search)}&project_id=${encodeURIComponent(activeProjectId)}`, {
           headers: backendHeaders(info.token),
         });
         if (!response.ok) return;
@@ -239,7 +239,7 @@ export default function App() {
       }
     }, 220);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [conversationSearch, conversationSearchRevision, connection]);
+  }, [conversationSearch, conversationSearchRevision, connection, activeProjectId]);
   useEffect(() => {
     if (!activeConversationId || !messages.length || phase !== "idle" || connection !== "online") return;
     if (openedConversationRef.current === activeConversationId) {
@@ -255,7 +255,7 @@ export default function App() {
       const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
         method: "PUT",
         headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
-        body: JSON.stringify({ title, messages: snapshot }),
+        body: JSON.stringify({ title, messages: snapshot, project_id: activeProjectId }),
       });
       if (!response.ok) throw new Error("Could not save this conversation.");
       if (current) {
@@ -269,7 +269,7 @@ export default function App() {
       if (current) setNotice("Could not save this conversation locally. Retry when Atlas is connected.");
     });
     return () => { current = false; };
-  }, [activeConversationId, messages, phase, connection, conversationTitles]);
+  }, [activeConversationId, messages, phase, connection, conversationTitles, activeProjectId]);
   useEffect(() => {
     if (view === "Conversation")
       feedRef.current?.scrollTo?.({
@@ -365,6 +365,7 @@ export default function App() {
         headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: payload,
+          project_id: activeProjectId,
           ...(activeModel !== modelName ? { model: activeModel } : {}),
           context,
           attachments: sentAttachment ? [sentAttachment.path] : [],
@@ -434,6 +435,11 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Could not open this conversation.");
       const stored = await response.json();
+      if (stored.project_id && stored.project_id !== activeProjectId) {
+        setActiveProjectId(stored.project_id);
+        try { window.localStorage.setItem("atlas.activeProject", stored.project_id); }
+        catch { /* The conversation still opens in this session. */ }
+      }
       openedConversationRef.current = id;
       setActiveConversationId(id);
       setConversationTitles((current) => ({ ...current, [id]: stored.title }));
@@ -494,6 +500,9 @@ export default function App() {
   function selectProject(projectId) {
     if (busy || projectId === activeProjectId) return;
     reset();
+    setSavedConversations([]);
+    setConversationSearch("");
+    setConversationSearchResults(null);
     setActiveProjectId(projectId);
     try { window.localStorage.setItem("atlas.activeProject", projectId); }
     catch { /* The project remains selected until the app closes. */ }
@@ -679,7 +688,7 @@ export default function App() {
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
-          <button className="project-manage-button" type="button" onClick={() => setProjectManagerOpen(true)} aria-label="Manage projects" title="Manage projects">
+          <button className="project-manage-button" type="button" onClick={() => setProjectManagerOpen(true)} aria-label="Manage projects" title="Manage projects" disabled={connection !== "online"}>
             <Icon name="edit" size={14} />
           </button>
         </div>

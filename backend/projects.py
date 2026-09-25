@@ -48,6 +48,14 @@ def list_projects() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def project_exists(project_id: str) -> bool:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
+    return row is not None
+
+
 def create_project(name: str) -> dict[str, Any]:
     project_id = str(uuid4())
     with closing(_connect()) as connection:
@@ -87,6 +95,22 @@ def delete_project(project_id: str) -> bool:
         return False
     with closing(_connect()) as connection:
         with connection:
+            tables = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            if "conversations" in tables:
+                columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(conversations)")
+                }
+                if "project_id" in columns:
+                    connection.execute(
+                        "UPDATE conversations SET project_id = ? WHERE project_id = ?",
+                        (GENERAL_PROJECT_ID, project_id),
+                    )
             cursor = connection.execute(
                 "DELETE FROM projects WHERE id = ?", (project_id,)
             )
