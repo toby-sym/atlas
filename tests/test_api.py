@@ -3,6 +3,7 @@
 from pathlib import Path
 from io import BytesIO
 import asyncio
+import sqlite3
 from uuid import uuid4
 
 import httpx
@@ -19,6 +20,7 @@ from backend.tools import filesystem
 def _client(monkeypatch, tmp_path):
     filesystem.set_workspace_path(str(tmp_path / "workspace"))
     conversations.set_conversations_path(str(tmp_path / "conversations.db"))
+    main.project_store.set_projects_path(str(tmp_path / "conversations.db"))
     main.memory_store.set_memory_path(str(tmp_path / "memory.db"))
 
     async def model_status():
@@ -368,6 +370,70 @@ def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path)
     assert [item["id"] for item in client.get("/projects").json()["projects"]] == [
         "general"
     ]
+
+
+def test_saved_conversations_are_project_scoped_and_preserved_on_delete(
+    monkeypatch, tmp_path
+):
+    client = _client(monkeypatch, tmp_path)
+    first_project = client.post("/projects", json={"name": "First"}).json()["project"]
+    second_project = client.post("/projects", json={"name": "Second"}).json()["project"]
+    first_id, second_id = str(uuid4()), str(uuid4())
+
+    for conversation_id, project, title, message in (
+        (first_id, first_project, "First launch notes", "private needle"),
+        (second_id, second_project, "Second launch notes", "other details"),
+    ):
+        response = client.put(
+            f"/conversations/{conversation_id}",
+            json={
+                "title": title,
+                "messages": [{"role": "user", "content": message}],
+                "project_id": project["id"],
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    first_list = client.get(f"/conversations?project_id={first_project['id']}")
+    second_list = client.get(f"/conversations?project_id={second_project['id']}")
+    assert [item["id"] for item in first_list.json()["conversations"]] == [first_id]
+    assert [item["id"] for item in second_list.json()["conversations"]] == [second_id]
+    assert client.get(
+        f"/conversations?project_id={second_project['id']}&search=needle"
+    ).json()["conversations"] == []
+    assert client.get(f"/conversations/{first_id}").json()["project_id"] == first_project[
+        "id"
+    ]
+    assert client.get("/conversations?project_id=unknown").status_code == 404
+
+    deleted = client.delete(f"/projects/{first_project['id']}")
+    assert deleted.status_code == 200, deleted.text
+    general = client.get("/conversations?project_id=general").json()["conversations"]
+    assert [item["id"] for item in general] == [first_id]
+    assert [item["id"] for item in client.get(
+        f"/conversations?project_id={second_project['id']}"
+    ).json()["conversations"]] == [second_id]
+
+
+def test_legacy_conversations_migrate_to_general(tmp_path):
+    database = tmp_path / "legacy-conversations.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE conversations ("
+            "id TEXT PRIMARY KEY, title TEXT NOT NULL, messages TEXT NOT NULL, "
+            "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO conversations (id, title, messages) VALUES (?, ?, ?)",
+            (str(uuid4()), "Legacy chat", '[{"role":"user","content":"hello"}]'),
+        )
+
+    conversations.set_conversations_path(str(database))
+    migrated = conversations.list_conversations("general")
+    assert len(migrated) == 1
+    assert migrated[0]["title"] == "Legacy chat"
+    assert conversations.list_conversations("missing-project") == []
 
 
 def test_stream_endpoint_forwards_tokens_and_completion(monkeypatch, tmp_path):
