@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from backend import conversations as conversation_store
+from backend import projects as project_store
 from backend.agent import AgentServiceError, run_agent_loop, stream_agent_loop
 from backend.settings import (
     CONVERSATIONS_PATH,
@@ -44,6 +45,7 @@ from backend.tools.memory import set_memory_path
 set_workspace_path(WORKSPACE_PATH)
 set_memory_path(MEMORY_PATH)
 conversation_store.set_conversations_path(CONVERSATIONS_PATH)
+project_store.set_projects_path(CONVERSATIONS_PATH)
 
 app = FastAPI(title="Atlas API", version="0.4.3")
 app.add_middleware(
@@ -102,6 +104,21 @@ class ConversationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: StrictStr = Field(..., min_length=1, max_length=120)
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=1000)
+
+
+class ProjectPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: StrictStr = Field(..., min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def strip_project_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Project names cannot be blank.")
+        if value.casefold() == "general":
+            raise ValueError("General is a reserved project name.")
+        return value
 
 
 class ConversationTitlePayload(BaseModel):
@@ -195,6 +212,65 @@ async def status():
         },
         "telemetry": telemetry_snapshot(),
     }
+
+
+@app.get("/projects")
+async def list_projects():
+    try:
+        projects = await asyncio.to_thread(project_store.list_projects)
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=500, detail="Could not load projects.") from exc
+    return {"projects": projects}
+
+
+@app.post("/projects", status_code=201)
+async def create_project(payload: ProjectPayload):
+    try:
+        project = await asyncio.to_thread(project_store.create_project, payload.name)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409, detail="A project with this name already exists."
+        ) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=500, detail="Could not create this project.") from exc
+    return {"project": project}
+
+
+@app.patch("/projects/{project_id}")
+async def rename_project(project_id: str, payload: ProjectPayload):
+    try:
+        project = await asyncio.to_thread(
+            project_store.rename_project, project_id, payload.name
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409, detail="A project with this name already exists."
+        ) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=500, detail="Could not rename this project.") from exc
+    if project is None:
+        raise HTTPException(
+            status_code=400 if project_id == project_store.GENERAL_PROJECT_ID else 404,
+            detail=(
+                "The General project cannot be renamed."
+                if project_id == project_store.GENERAL_PROJECT_ID
+                else "Project not found."
+            ),
+        )
+    return {"project": project}
+
+
+@app.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    if project_id == project_store.GENERAL_PROJECT_ID:
+        raise HTTPException(status_code=400, detail="The General project cannot be deleted.")
+    try:
+        deleted = await asyncio.to_thread(project_store.delete_project, project_id)
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=500, detail="Could not delete this project.") from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"deleted": True}
 
 
 @app.get("/conversations")
