@@ -64,6 +64,12 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(false);
   const [messages, setMessages] = useState([]);
   const [savedConversations, setSavedConversations] = useState([]);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationSearchResults, setConversationSearchResults] = useState(null);
+  const [conversationSearchRevision, setConversationSearchRevision] = useState(0);
+  const [editingConversationId, setEditingConversationId] = useState(null);
+  const [conversationTitleDraft, setConversationTitleDraft] = useState("");
+  const [conversationTitles, setConversationTitles] = useState({});
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("idle");
@@ -96,6 +102,9 @@ export default function App() {
   const saveQueueRef = useRef(Promise.resolve());
   const openedConversationRef = useRef(null);
   const busy = phase !== "idle";
+  const visibleConversations = conversationSearch.trim()
+    ? conversationSearchResults || []
+    : savedConversations;
   const activeModel = installedModels.length
     ? selectedModel && installedModels.includes(selectedModel)
       ? selectedModel
@@ -174,13 +183,36 @@ export default function App() {
     return () => { cancelled = true; };
   }, [connection]);
   useEffect(() => {
+    const search = conversationSearch.trim();
+    if (!search) {
+      setConversationSearchResults(null);
+      return undefined;
+    }
+    if (connection !== "online") return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/conversations?search=${encodeURIComponent(search)}`, {
+          headers: backendHeaders(info.token),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setConversationSearchResults(data.conversations || []);
+      } catch {
+        // Search remains local to this installation and retries as the query changes.
+      }
+    }, 220);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [conversationSearch, conversationSearchRevision, connection]);
+  useEffect(() => {
     if (!activeConversationId || !messages.length || phase !== "idle" || connection !== "online") return;
     if (openedConversationRef.current === activeConversationId) {
       openedConversationRef.current = null;
       return;
     }
     const id = activeConversationId;
-    const title = messages.find((message) => message.role === "user")?.content.trim().slice(0, 120) || "Conversation";
+    const title = conversationTitles[id] || messages.find((message) => message.role === "user")?.content.trim().slice(0, 120) || "Conversation";
     const snapshot = messages.map(({ role, content }) => ({ role, content }));
     let current = true;
     saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
@@ -196,12 +228,13 @@ export default function App() {
           { id, title },
           ...existing.filter((item) => item.id !== id),
         ]);
+        setConversationSearchRevision((revision) => revision + 1);
       }
     }).catch(() => {
       if (current) setNotice("Could not save this conversation locally. Retry when Atlas is connected.");
     });
     return () => { current = false; };
-  }, [activeConversationId, messages, phase, connection]);
+  }, [activeConversationId, messages, phase, connection, conversationTitles]);
   useEffect(() => {
     if (view === "Conversation")
       feedRef.current?.scrollTo?.({
@@ -368,11 +401,41 @@ export default function App() {
       const stored = await response.json();
       openedConversationRef.current = id;
       setActiveConversationId(id);
+      setConversationTitles((current) => ({ ...current, [id]: stored.title }));
       setMessages(stored.messages || []);
       setSelectedFile(null);
       setPhase("idle");
       setNotice("");
       setView("Conversation");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+  async function renameConversation(id, title) {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setNotice("Conversation titles cannot be blank.");
+      return;
+    }
+    if (trimmed.length > 120) {
+      setNotice("Conversation titles must be 120 characters or fewer.");
+      return;
+    }
+    try {
+      await saveQueueRef.current.catch(() => {});
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/conversations/${id}`, {
+        method: "PATCH",
+        headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ title: trimmed }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not rename this conversation.");
+      setConversationTitles((current) => ({ ...current, [id]: trimmed }));
+      setSavedConversations((current) => current.map((saved) => saved.id === id ? { ...saved, title: trimmed } : saved));
+      setConversationSearchRevision((revision) => revision + 1);
+      setEditingConversationId(null);
+      setNotice("");
     } catch (error) {
       setNotice(error.message);
     }
@@ -387,6 +450,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Could not delete this conversation.");
       setSavedConversations((existing) => existing.filter((item) => item.id !== id));
+      setConversationSearchResults((existing) => existing?.filter((item) => item.id !== id) ?? existing);
       if (activeConversationId === id) reset();
     } catch (error) {
       setNotice(error.message);
@@ -571,18 +635,47 @@ export default function App() {
           </span>
         </div>
         <div className="session-list">
-          {savedConversations.length ? (
-            savedConversations.map((saved) => (
+          <input
+            className="conversation-search"
+            type="search"
+            aria-label="Search conversations"
+            placeholder="Search conversations"
+            value={conversationSearch}
+            onChange={(event) => setConversationSearch(event.target.value)}
+          />
+          {savedConversations.length ? visibleConversations.length ? (
+            visibleConversations.map((saved) => (
               <div className="saved-session" key={saved.id}>
-                <button onClick={() => openConversation(saved.id)}>
-                  <Icon name="chat" size={14} />
-                  <span>{saved.title}</span>
-                </button>
-                <button className="delete-session" aria-label={`Delete ${saved.title}`} onClick={() => deleteConversation(saved.id)}>
-                  <Icon name="close" size={12} />
-                </button>
+                {editingConversationId === saved.id ? (
+                  <form className="rename-session" onSubmit={(event) => { event.preventDefault(); renameConversation(saved.id, conversationTitleDraft); }}>
+                    <input
+                      autoFocus
+                      aria-label={`New title for ${saved.title}`}
+                      maxLength={120}
+                      value={conversationTitleDraft}
+                      onChange={(event) => setConversationTitleDraft(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === "Escape") setEditingConversationId(null); }}
+                    />
+                    <button type="submit" aria-label={`Save title for ${saved.title}`}><Icon name="check" size={13} /></button>
+                  </form>
+                ) : (
+                  <>
+                    <button className="open-session" onClick={() => openConversation(saved.id)}>
+                      <Icon name="chat" size={14} />
+                      <span>{saved.title}</span>
+                    </button>
+                    <button className="rename-session-button" aria-label={`Rename ${saved.title}`} onClick={() => { setConversationTitleDraft(saved.title); setEditingConversationId(saved.id); }}>
+                      <Icon name="edit" size={12} />
+                    </button>
+                    <button className="delete-session" aria-label={`Delete ${saved.title}`} onClick={() => deleteConversation(saved.id)}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  </>
+                )}
               </div>
             ))
+          ) : (
+            <p>No conversations match “{conversationSearch}”.</p>
           ) : (
             <p>
               No saved conversations yet.
