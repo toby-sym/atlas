@@ -43,6 +43,20 @@ def list_conversations() -> list[dict[str, str]]:
     return [dict(row) for row in rows]
 
 
+def search_conversations(query: str) -> list[dict[str, str]]:
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+    with closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT id, title, created_at, updated_at FROM conversations "
+            "WHERE title LIKE ? COLLATE NOCASE ESCAPE '\\' "
+            "OR messages LIKE ? COLLATE NOCASE ESCAPE '\\' "
+            "ORDER BY updated_at DESC, created_at DESC",
+            (pattern, pattern),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_conversation(conversation_id: str) -> dict[str, Any] | None:
     with closing(_connect()) as connection:
         row = connection.execute(
@@ -73,6 +87,17 @@ def save_conversation(
             """,
                 (conversation_id, title, json.dumps(messages, ensure_ascii=False)),
             )
+
+
+def rename_conversation(conversation_id: str, title: str) -> bool:
+    with closing(_connect()) as connection:
+        with connection:
+            cursor = connection.execute(
+                "UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (title, conversation_id),
+            )
+            return cursor.rowcount > 0
 
 
 def delete_conversation(conversation_id: str) -> bool:
