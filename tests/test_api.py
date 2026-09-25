@@ -354,7 +354,7 @@ def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path)
     duplicate = client.post("/projects", json={"name": "launch PLAN"})
     assert duplicate.status_code == 409
     assert client.post("/projects", json={"name": "   "}).status_code == 422
-    assert client.post("/projects", json={"name": "General"}).status_code == 422
+    assert client.post("/projects", json={"name": "General"}).status_code == 409
     assert (
         client.patch("/projects/general", json={"name": "Everywhere"}).status_code
         == 400
@@ -441,6 +441,119 @@ def test_legacy_conversations_migrate_to_general(tmp_path):
     assert len(migrated) == 1
     assert migrated[0]["title"] == "Legacy chat"
     assert conversations.list_conversations("missing-project") == []
+
+
+def test_project_files_are_isolated_attachable_and_preserved_on_delete(
+    monkeypatch, tmp_path
+):
+    client = _client(monkeypatch, tmp_path)
+    project = client.post("/projects", json={"name": "Research"}).json()["project"]
+    uploaded = client.post(
+        f"/files?project_id={project['id']}",
+        files={"file": ("brief.txt", b"Research notes stay in this project.")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    path = uploaded.json()["path"]
+
+    project_files = client.get(f"/files?project_id={project['id']}").json()["files"]
+    assert [item["path"] for item in project_files] == [path]
+    assert client.get("/files?project_id=general").json()["files"] == []
+    assert client.get("/files?project_id=unknown").status_code == 404
+
+    async def fake_agent(**kwargs):
+        return {
+            "role": "assistant",
+            "content": kwargs["attachment_context"],
+        }
+
+    monkeypatch.setattr(main, "run_agent_loop", fake_agent)
+    body = {
+        "messages": [{"role": "user", "content": "Summarize this"}],
+        "attachments": [path],
+    }
+    cross_project = client.post("/chat", json={**body, "project_id": "general"})
+    assert cross_project.status_code == 400
+
+    attached = client.post("/chat", json={**body, "project_id": project["id"]})
+    assert attached.status_code == 200, attached.text
+    assert "Research notes stay in this project." in attached.json()["message"]["content"]
+
+    deleted = client.delete(f"/projects/{project['id']}")
+    assert deleted.status_code == 200, deleted.text
+    general_files = client.get("/files?project_id=general").json()["files"]
+    assert [item["path"] for item in general_files] == [path]
+    removed = client.delete(f"/files/{path}?project_id=general")
+    assert removed.status_code == 200, removed.text
+    assert client.get("/files?project_id=general").json()["files"] == []
+
+
+def test_project_instructions_are_passed_to_the_agent(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    created = client.post(
+        "/projects",
+        json={
+            "name": "Writing",
+            "instructions": "Use short paragraphs and plain language.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    project_id = created.json()["project"]["id"]
+    captured = {}
+
+    async def fake_agent(**kwargs):
+        captured.update(kwargs)
+        return {"role": "assistant", "content": "Ready."}
+
+    monkeypatch.setattr(main, "run_agent_loop", fake_agent)
+    response = client.post(
+        "/chat",
+        json={
+            "project_id": project_id,
+            "messages": [{"role": "user", "content": "Draft an introduction."}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert captured["project_id"] == project_id
+    assert captured["project_instructions"] == "Use short paragraphs and plain language."
+
+
+def test_memories_are_scoped_shared_and_preserved_when_project_is_deleted(
+    monkeypatch, tmp_path
+):
+    client = _client(monkeypatch, tmp_path)
+    first = client.post("/projects", json={"name": "Garden"}).json()["project"]
+    second = client.post("/projects", json={"name": "Studio"}).json()["project"]
+
+    for project, value in ((first, "Garden plan"), (second, "Studio plan")):
+        response = client.post(
+            f"/memories?project_id={project['id']}",
+            json={"key": "project plan", "value": value},
+        )
+        assert response.status_code == 201, response.text
+
+    shared = client.post(
+        f"/memories?project_id={first['id']}",
+        json={"key": "writing preference", "value": "Plain language", "scope": "shared"},
+    )
+    assert shared.status_code == 201, shared.text
+    first_memories = client.get(f"/memories?project_id={first['id']}").json()["memories"]
+    second_memories = client.get(f"/memories?project_id={second['id']}").json()["memories"]
+    assert {item["key"] for item in first_memories} == {"project plan", "writing preference"}
+    assert {item["key"] for item in second_memories} == {"project plan", "writing preference"}
+    assert next(item for item in first_memories if item["key"] == "project plan")["value"] == "Garden plan"
+    assert next(item for item in second_memories if item["key"] == "project plan")["value"] == "Studio plan"
+
+    general_memory = client.post(
+        "/memories?project_id=general",
+        json={"key": "project plan", "value": "General plan"},
+    )
+    assert general_memory.status_code == 201, general_memory.text
+    deleted = client.delete(f"/projects/{first['id']}")
+    assert deleted.status_code == 200, deleted.text
+    general_memories = client.get("/memories?project_id=general").json()["memories"]
+    plans = [item["value"] for item in general_memories if item["key"].startswith("project plan")]
+    assert set(plans) == {"General plan", "Garden plan"}
+    assert client.get(f"/memories?project_id={first['id']}").status_code == 404
 
 
 def test_stream_endpoint_forwards_tokens_and_completion(monkeypatch, tmp_path):

@@ -225,6 +225,48 @@ def test_explicit_memory_recall_runs_before_model_without_chip(monkeypatch):
     assert "Atlas" in history[0]["content"]
 
 
+def test_project_instructions_are_added_to_the_system_context():
+    history, _tools = asyncio.run(
+        agent._prepare_history(
+            [{"role": "user", "content": "Draft a note."}],
+            research=False,
+            recall=False,
+            attachment_context="",
+            web_enabled=False,
+            memory_enabled=False,
+            filesystem_enabled=False,
+            project_instructions="Use short paragraphs.",
+            project_id="project-id",
+        )
+    )
+    assert history[0]["role"] == "system"
+    assert "Instructions for the current project, set by the user:" in history[0]["content"]
+    assert "Use short paragraphs." in history[0]["content"]
+
+
+def test_memory_recall_receives_the_active_project_id(monkeypatch):
+    recalled_projects = []
+
+    def fake_recall(query="", project_id="general"):
+        recalled_projects.append(project_id)
+        return []
+
+    monkeypatch.setattr(agent, "recall_memory", fake_recall)
+    asyncio.run(
+        agent._prepare_history(
+            [{"role": "user", "content": "Tell me what you remember."}],
+            research=False,
+            recall=True,
+            attachment_context="",
+            web_enabled=False,
+            memory_enabled=True,
+            filesystem_enabled=False,
+            project_id="garden-id",
+        )
+    )
+    assert recalled_projects == ["garden-id"]
+
+
 def test_malformed_tool_arguments_are_reported_to_model(monkeypatch):
     class Response:
         def __init__(self, payload):
