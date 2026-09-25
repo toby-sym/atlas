@@ -1,5 +1,8 @@
 """Local SQLite storage for Atlas projects."""
 
+# The SQLite setup intentionally mirrors conversations.py for the shared database.
+# pylint: disable=duplicate-code
+
 import sqlite3
 from contextlib import closing
 from pathlib import Path

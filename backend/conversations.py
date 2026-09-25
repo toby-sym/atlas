@@ -1,5 +1,8 @@
 """Local SQLite storage for saved chat conversations."""
 
+# The SQLite setup intentionally mirrors projects.py for the shared database.
+# pylint: disable=duplicate-code
+
 import json
 import sqlite3
 from contextlib import closing
