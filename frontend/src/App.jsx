@@ -11,7 +11,7 @@ import MemoryLibrary from "./components/MemoryLibrary";
 import { backendHeaders, readChatEvents, resolveBackend } from "./backendClient";
 import "./App.css";
 
-const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.1-dev";
+const BUILD_VERSION = process.env.REACT_APP_BUILD_VERSION || "0.4.2-dev";
 function newConversationId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (letter) => {

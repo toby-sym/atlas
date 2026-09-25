@@ -45,7 +45,7 @@ set_workspace_path(WORKSPACE_PATH)
 set_memory_path(MEMORY_PATH)
 conversation_store.set_conversations_path(CONVERSATIONS_PATH)
 
-app = FastAPI(title="Atlas API", version="0.4.1")
+app = FastAPI(title="Atlas API", version="0.4.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
