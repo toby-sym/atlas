@@ -398,21 +398,28 @@ def test_saved_conversations_are_project_scoped_and_preserved_on_delete(
     second_list = client.get(f"/conversations?project_id={second_project['id']}")
     assert [item["id"] for item in first_list.json()["conversations"]] == [first_id]
     assert [item["id"] for item in second_list.json()["conversations"]] == [second_id]
-    assert client.get(
-        f"/conversations?project_id={second_project['id']}&search=needle"
-    ).json()["conversations"] == []
-    assert client.get(f"/conversations/{first_id}").json()["project_id"] == first_project[
-        "id"
-    ]
+    assert (
+        client.get(
+            f"/conversations?project_id={second_project['id']}&search=needle"
+        ).json()["conversations"]
+        == []
+    )
+    assert (
+        client.get(f"/conversations/{first_id}").json()["project_id"]
+        == first_project["id"]
+    )
     assert client.get("/conversations?project_id=unknown").status_code == 404
 
     deleted = client.delete(f"/projects/{first_project['id']}")
     assert deleted.status_code == 200, deleted.text
     general = client.get("/conversations?project_id=general").json()["conversations"]
     assert [item["id"] for item in general] == [first_id]
-    assert [item["id"] for item in client.get(
-        f"/conversations?project_id={second_project['id']}"
-    ).json()["conversations"]] == [second_id]
+    assert [
+        item["id"]
+        for item in client.get(
+            f"/conversations?project_id={second_project['id']}"
+        ).json()["conversations"]
+    ] == [second_id]
 
 
 def test_legacy_conversations_migrate_to_general(tmp_path):

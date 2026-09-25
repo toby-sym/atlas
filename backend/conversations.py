@@ -52,7 +52,9 @@ def list_conversations(project_id: str = "general") -> list[dict[str, str]]:
     return [dict(row) for row in rows]
 
 
-def search_conversations(query: str, project_id: str = "general") -> list[dict[str, str]]:
+def search_conversations(
+    query: str, project_id: str = "general"
+) -> list[dict[str, str]]:
     escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     pattern = f"%{escaped}%"
     with closing(_connect()) as connection:
