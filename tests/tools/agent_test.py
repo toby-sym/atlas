@@ -250,7 +250,7 @@ def test_project_instructions_are_added_to_the_system_context():
 def test_memory_recall_receives_the_active_project_id(monkeypatch):
     recalled_projects = []
 
-    def fake_recall(query="", project_id="general"):
+    def fake_recall(_query="", project_id="general"):
         recalled_projects.append(project_id)
         return []
 

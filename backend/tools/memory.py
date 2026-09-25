@@ -2,6 +2,7 @@
 
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -10,6 +11,14 @@ logger = logging.getLogger(__name__)
 GENERAL_PROJECT_ID = "general"
 SHARED_MEMORY_ID = "shared"
 DB_PATH = Path(os.getenv("ATLAS_MEMORY_DB", "backend/data/memory.db"))
+
+
+@dataclass(frozen=True)
+class MemoryUpdateOptions:
+    """Scope fields for updating a memory visible in one project."""
+
+    project_id: str = GENERAL_PROJECT_ID
+    visible_project_id: str | None = None
 
 
 def set_memory_path(path: str) -> None:
@@ -144,11 +153,11 @@ def update_memory(
     key: str,
     value: str,
     category: str,
-    project_id: str = GENERAL_PROJECT_ID,
-    visible_project_id: str | None = None,
+    options: MemoryUpdateOptions | None = None,
 ) -> dict[str, Any] | None:
     """Update a memory visible in this project, optionally changing its scope."""
-    visible_project_id = visible_project_id or project_id
+    options = options or MemoryUpdateOptions()
+    visible_project_id = options.visible_project_id or options.project_id
     with _get_db() as conn:
         cursor = conn.execute(
             "UPDATE memories SET key = ?, value = ?, category = ?, project_id = ?, "
@@ -157,7 +166,7 @@ def update_memory(
                 key,
                 value,
                 category,
-                project_id,
+                options.project_id,
                 memory_id,
                 visible_project_id,
                 SHARED_MEMORY_ID,

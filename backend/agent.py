@@ -271,6 +271,16 @@ async def _prepare_history(
 
 # The loop coordinates model calls, optional evidence, tool execution, and finalization.
 # Keep its explicit arguments for the existing API and tests.
+def _add_project_context(name: str, arguments: dict[str, Any], project_id: str) -> None:
+    if name in {"read_file", "recall_memory"}:
+        arguments["project_id"] = project_id
+    elif name == "save_memory":
+        scope = arguments.pop("scope", "project")
+        if scope not in {"project", "shared"}:
+            raise ValueError("memory scope must be project or shared")
+        arguments["project_id"] = "shared" if scope == "shared" else project_id
+
+
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements
 async def run_agent_loop(
     messages: list[dict[str, Any]],
@@ -360,19 +370,7 @@ async def run_agent_loop(
                     if name not in enabled_tools:
                         output = f"Error: Tool '{name}' is disabled by configuration."
                     else:
-                        if name == "read_file":
-                            arguments["project_id"] = project_id
-                        elif name == "recall_memory":
-                            arguments["project_id"] = project_id
-                        elif name == "save_memory":
-                            scope = arguments.pop("scope", "project")
-                            if scope not in {"project", "shared"}:
-                                raise ValueError(
-                                    "memory scope must be project or shared"
-                                )
-                            arguments["project_id"] = (
-                                "shared" if scope == "shared" else project_id
-                            )
+                        _add_project_context(name, arguments, project_id)
                         output = await registry.execute(name, arguments)
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                     logger.warning("Ignoring malformed tool call: %s", exc)

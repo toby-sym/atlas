@@ -449,8 +449,9 @@ async def update_saved_memory(
             payload.key,
             payload.value,
             payload.category,
-            memory_project_id,
-            project_id,
+            memory_store.MemoryUpdateOptions(
+                project_id=memory_project_id, visible_project_id=project_id
+            ),
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
