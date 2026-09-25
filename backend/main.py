@@ -138,27 +138,29 @@ def _ollama_tags_url() -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "/api/tags", "", ""))
 
 
-async def _model_status() -> dict[str, str]:
+async def _model_status() -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(_ollama_tags_url())
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("models", []), list):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
     models = payload.get("models", [])
-    names = {
-        model.get("name") or model.get("model")
-        for model in models
-        if isinstance(model, dict)
-        and isinstance(model.get("name") or model.get("model"), str)
-    }
+    names = sorted(
+        {
+            model.get("name") or model.get("model")
+            for model in models
+            if isinstance(model, dict)
+            and isinstance(model.get("name") or model.get("model"), str)
+        }
+    )
     if DEFAULT_MODEL in names:
-        return {"state": "ready", "name": DEFAULT_MODEL}
-    return {"state": "missing", "name": DEFAULT_MODEL}
+        return {"state": "ready", "name": DEFAULT_MODEL, "available": names}
+    return {"state": "missing", "name": DEFAULT_MODEL, "available": names}
 
 
 @app.get("/health")

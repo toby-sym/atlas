@@ -381,6 +381,24 @@
   color: #938ba3;
   font-size: 9px;
 }
+.model-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #938ba3;
+  font-size: 9px;
+}
+.model-picker select {
+  max-width: 170px;
+  border: 1px solid #ffffff17;
+  border-radius: 7px;
+  padding: 7px 26px 7px 9px;
+  color: #d9d0e5;
+  background: #15141f;
+  font: inherit;
+}
+.model-picker select:disabled { opacity: .65; }
+.model-picker option { color: #d9d0e5; background: #15141f; }
 .status-dot {
   width: 5px;
   height: 5px;
@@ -2046,6 +2064,8 @@
   .topbar-right .connection {
     display: none;
   }
+  .model-picker > span { display: none; }
+  .model-picker select { max-width: 130px; }
   .main-shell {
     width: 100%;
   }
