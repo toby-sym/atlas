@@ -1,6 +1,7 @@
 """HTTP API for the Atlas desktop and web clients."""
 
 import asyncio
+from datetime import datetime
 import hmac
 import json
 import os
@@ -150,27 +151,29 @@ def _ollama_tags_url() -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "/api/tags", "", ""))
 
 
-async def _model_status() -> dict[str, str]:
+async def _model_status() -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(_ollama_tags_url())
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("models", []), list):
-        return {"state": "unavailable", "name": DEFAULT_MODEL}
+        return {"state": "unavailable", "name": DEFAULT_MODEL, "available": []}
     models = payload.get("models", [])
-    names = {
-        model.get("name") or model.get("model")
-        for model in models
-        if isinstance(model, dict)
-        and isinstance(model.get("name") or model.get("model"), str)
-    }
+    names = sorted(
+        {
+            model.get("name") or model.get("model")
+            for model in models
+            if isinstance(model, dict)
+            and isinstance(model.get("name") or model.get("model"), str)
+        }
+    )
     if DEFAULT_MODEL in names:
-        return {"state": "ready", "name": DEFAULT_MODEL}
-    return {"state": "missing", "name": DEFAULT_MODEL}
+        return {"state": "ready", "name": DEFAULT_MODEL, "available": names}
+    return {"state": "missing", "name": DEFAULT_MODEL, "available": names}
 
 
 @app.get("/health")
@@ -389,6 +392,82 @@ async def upload_file(file: UploadFile = File(...)):
         ) from exc
     finally:
         await file.close()
+
+
+@app.get("/files")
+async def list_workspace_files():
+    if not FILESYSTEM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Workspace file tools are disabled in the current configuration.",
+        )
+    try:
+        root = Path(_resolve_path("."))
+        files = []
+        for entry in root.iterdir():
+            if not entry.is_file() or entry.is_symlink():
+                continue
+            if entry.suffix.lower() not in SUPPORTED_SUFFIXES:
+                continue
+            try:
+                resolved = Path(_resolve_path(entry.name))
+                stat = resolved.stat()
+            except (OSError, ValueError):
+                continue
+            files.append(
+                {
+                    "path": entry.name,
+                    "filename": entry.name,
+                    "size_bytes": stat.st_size,
+                    "readable": stat.st_size <= MAX_FILE_BYTES,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime)
+                    .astimezone()
+                    .isoformat(timespec="minutes"),
+                }
+            )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not list workspace files."
+        ) from exc
+    return {"files": sorted(files, key=lambda item: item["modified_at"], reverse=True)}
+
+
+@app.delete("/files/{filename}")
+async def delete_workspace_file(filename: str):
+    if not FILESYSTEM_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Workspace file tools are disabled in the current configuration.",
+        )
+    if (
+        Path(filename).name != filename
+        or filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise HTTPException(status_code=400, detail="Invalid workspace filename.")
+    try:
+        root = Path(_resolve_path("."))
+        source = root / filename
+        if source.is_symlink():
+            raise HTTPException(
+                status_code=400, detail="Workspace links cannot be deleted here."
+            )
+        target = Path(_resolve_path(filename))
+        if target.suffix.lower() not in SUPPORTED_SUFFIXES:
+            raise HTTPException(
+                status_code=400, detail="This file type is not supported."
+            )
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="Workspace file not found.")
+        target.unlink()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not delete workspace file."
+        ) from exc
+    return {"deleted": True}
 
 
 async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]:

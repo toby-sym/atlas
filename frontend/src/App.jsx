@@ -48,6 +48,16 @@ const suggestions = [
 const demoText =
   'A calmer workspace starts with a little structure. I’ve grouped this example into three focused areas: **ideas**, **in progress**, and **ready to share**.\n\nHere’s a small starting point you can make your own.\n\n```javascript\nconst workspace = {\n  ideas: [],\n  inProgress: ["Something extraordinary"],\n  readyToShare: []\n};\n\nconsole.log(workspace);\n```';
 
+function formatFileSize(bytes = 0) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function formatFileDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString();
+}
+
 export default function App() {
   const [view, setView] = useState("Overview");
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 760);
@@ -67,6 +77,11 @@ export default function App() {
   const [connection, setConnection] = useState("checking");
   const [modelStatus, setModelStatus] = useState("checking");
   const [modelName, setModelName] = useState("qwen3:4b");
+  const [installedModels, setInstalledModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try { return window.localStorage.getItem("atlas.selectedModel") || ""; }
+    catch { return ""; }
+  });
   const [telemetryData, setTelemetryData] = useState(null);
   const [notice, setNotice] = useState("");
   const [files, setFiles] = useState([]);
@@ -90,6 +105,11 @@ export default function App() {
   const visibleConversations = conversationSearch.trim()
     ? conversationSearchResults || []
     : savedConversations;
+  const activeModel = installedModels.length
+    ? selectedModel && installedModels.includes(selectedModel)
+      ? selectedModel
+      : installedModels.includes(modelName) ? modelName : installedModels[0]
+    : selectedModel || modelName;
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +129,7 @@ export default function App() {
           setConnection("online");
           setModelStatus(result.model?.state || "unavailable");
           setModelName(result.model?.name || "qwen3:4b");
+          setInstalledModels(Array.isArray(result.model?.available) ? result.model.available : []);
           setContextFeatures(result.features || { web_research: true, memory: true, files: true });
           setTelemetryData(result.telemetry || null);
         }
@@ -147,6 +168,18 @@ export default function App() {
       }
     }
     loadConversations();
+    async function loadWorkspaceFiles() {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) setFiles(data.files || []);
+      } catch {
+        // The connection status already reports temporary backend failures.
+      }
+    }
+    loadWorkspaceFiles();
     return () => { cancelled = true; };
   }, [connection]);
   useEffect(() => {
@@ -263,7 +296,6 @@ export default function App() {
     setPreview(false);
     setMessages([]);
     setActiveConversationId(null);
-    setFiles([]);
     setPhase("idle");
     setToolActivity("");
     setInput("");
@@ -298,6 +330,7 @@ export default function App() {
         headers: backendHeaders(connectionInfo.token, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: payload,
+          ...(activeModel !== modelName ? { model: activeModel } : {}),
           context,
           attachments: sentAttachment ? [sentAttachment.path] : [],
         }),
@@ -448,7 +481,7 @@ export default function App() {
         throw new Error(result.detail || "The file could not be uploaded.");
       if (!controller.signal.aborted) {
         const uploaded = { path: result.path, filename: result.filename || result.path };
-        setFiles((current) => [...current, uploaded]);
+        await refreshWorkspaceFiles();
         setSelectedFile(uploaded);
         setInput((current) => current || "Summarize the attached file and cite useful sections.");
         setNotice(`Added ${uploaded.filename} to your workspace.`);
@@ -460,6 +493,30 @@ export default function App() {
         setPhase("idle");
         requestRef.current = null;
       }
+    }
+  }
+  async function refreshWorkspaceFiles() {
+    const info = apiRef.current || await resolveBackend();
+    const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+    if (!response.ok) throw new Error("Could not refresh workspace files.");
+    const data = await response.json();
+    setFiles(data.files || []);
+  }
+  async function deleteWorkspaceFile(file) {
+    if (!window.confirm(`Delete ${file.filename} from the Atlas workspace?`)) return;
+    try {
+      const info = apiRef.current || await resolveBackend();
+      const response = await fetch(`${info.baseUrl}/files/${encodeURIComponent(file.path)}`, {
+        method: "DELETE",
+        headers: backendHeaders(info.token),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not delete this file.");
+      setFiles((current) => current.filter((item) => item.path !== file.path));
+      setSelectedFile((current) => current?.path === file.path ? null : current);
+      setNotice(`Deleted ${file.filename} from your workspace.`);
+    } catch (error) {
+      setNotice(error.message);
     }
   }
   function toggleVoice() {
@@ -681,6 +738,26 @@ export default function App() {
                     ? "Checking model"
                     : "Start Ollama to chat"}
             </span>
+            <label className="model-picker">
+              <span>Model</span>
+              <select
+                aria-label="Local model"
+                value={activeModel}
+                disabled={!installedModels.length || busy}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSelectedModel(next === modelName ? "" : next);
+                  try {
+                    if (next === modelName) window.localStorage.removeItem("atlas.selectedModel");
+                    else window.localStorage.setItem("atlas.selectedModel", next);
+                  } catch { /* Model choice remains available until the app closes. */ }
+                }}
+              >
+                {installedModels.length ? installedModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                )) : <option value={activeModel}>{modelStatus === "unavailable" ? `${activeModel} · Ollama unavailable` : activeModel}</option>}
+              </select>
+            </label>
             <button
               className={`icon-button ${telemetry ? "active" : ""}`}
               onClick={() => setTelemetry((v) => !v)}
@@ -930,7 +1007,7 @@ export default function App() {
                 <p>
                   {view === "Memory"
                     ? "Atlas can save and recall context using its local memory tools."
-                    : "Add a file to your local workspace, then ask Atlas to explore it."}
+                    : "Files in your local workspace stay available across sessions. Choose one to attach it to a conversation."}
                 </p>
               </div>
               <div className="library-card glass">
@@ -948,7 +1025,7 @@ export default function App() {
                     ? contextFeatures.memory
                       ? "Bring saved preferences, project notes, and useful facts into the conversation."
                       : "Memory is disabled in the current configuration."
-                    : "Files added here are saved to the Atlas workspace on your machine."}
+                    : "Your workspace files are stored on this machine and remain available when you return."}
                 </p>
                 <button
                   className="primary-button"
@@ -964,23 +1041,27 @@ export default function App() {
                   <Icon name={view === "Memory" ? "spark" : "plus"} size={16} />
                   {view === "Memory" ? "Recall my memories" : "Add a file"}
                 </button>
-                {files.length > 0 && view === "Workspace" && (
+                {view === "Workspace" && (
                   <div className="file-list">
-                    <div className="nav-label">ADDED THIS SESSION</div>
+                    <div className="nav-label">FILES IN THIS WORKSPACE</div>
+                    {files.length === 0 && <p className="empty-file-list">No supported files in this workspace yet.</p>}
                     {files.map((file) => (
-                      <button
-                        key={file.path}
-                        onClick={() =>
-                          (() => {
+                      <div className="workspace-file" key={file.path}>
+                        <button
+                          className="workspace-file-open"
+                          onClick={() => {
                             setSelectedFile(file);
                             selectPrompt("Summarize the attached file and cite useful sections.");
-                          })()
-                        }
-                      >
-                        <Icon name="file" size={17} />
-                        {file.filename}
-                        <Icon name="arrowUpRight" size={15} />
-                      </button>
+                          }}
+                        >
+                          <Icon name="file" size={17} />
+                          <span>{file.filename}<small>{formatFileSize(file.size_bytes)} · {file.readable ? formatFileDate(file.modified_at) : "Too large to attach"}</small></span>
+                          <Icon name="arrowUpRight" size={15} />
+                        </button>
+                        <button className="workspace-file-delete" aria-label={`Delete ${file.filename}`} onClick={() => deleteWorkspaceFile(file)}>
+                          <Icon name="close" size={13} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
