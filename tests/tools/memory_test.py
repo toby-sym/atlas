@@ -80,14 +80,18 @@ def test_chat_memories_keep_source_conversation_and_can_be_unlinked():
     )
 
     stored = next(
-        item for item in memory.list_memories("garden") if item["key"] == "meeting place"
+        item
+        for item in memory.list_memories("garden")
+        if item["key"] == "meeting place"
     )
     assert stored["source"] == "chat"
     assert stored["source_conversation_id"] == conversation_id
 
     memory.clear_conversation_source(conversation_id)
     stored = next(
-        item for item in memory.list_memories("garden") if item["key"] == "meeting place"
+        item
+        for item in memory.list_memories("garden")
+        if item["key"] == "meeting place"
     )
     assert stored["source"] == "chat"
     assert stored["source_conversation_id"] is None
