@@ -145,7 +145,7 @@ test("preview remains simulated and never calls the chat API", async () => {
 
 test("shows the active beta build version in the header", async () => {
   await connectedApp();
-  expect(screen.getByText(process.env.REACT_APP_BUILD_VERSION || "0.4.2-dev")).toBeInTheDocument();
+  expect(screen.getByText(process.env.REACT_APP_BUILD_VERSION || "0.4.3-dev")).toBeInTheDocument();
 });
 
 test("shows live CPU, memory, GPU, and VRAM readings from backend status", async () => {
