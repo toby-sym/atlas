@@ -367,7 +367,9 @@ async def run_agent_loop(
                         elif name == "save_memory":
                             scope = arguments.pop("scope", "project")
                             if scope not in {"project", "shared"}:
-                                raise ValueError("memory scope must be project or shared")
+                                raise ValueError(
+                                    "memory scope must be project or shared"
+                                )
                             arguments["project_id"] = (
                                 "shared" if scope == "shared" else project_id
                             )
@@ -541,7 +543,9 @@ async def stream_agent_loop(
                         elif name == "save_memory":
                             scope = arguments.pop("scope", "project")
                             if scope not in {"project", "shared"}:
-                                raise ValueError("memory scope must be project or shared")
+                                raise ValueError(
+                                    "memory scope must be project or shared"
+                                )
                             arguments["project_id"] = (
                                 "shared" if scope == "shared" else project_id
                             )

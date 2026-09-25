@@ -78,9 +78,7 @@ def _get_db() -> sqlite3.Connection:
             """
         )
         conn.execute("DROP TABLE memories")
-        conn.execute(
-            "ALTER TABLE memories_project_migration RENAME TO memories"
-        )
+        conn.execute("ALTER TABLE memories_project_migration RENAME TO memories")
     conn.commit()
     return conn
 
@@ -175,9 +173,7 @@ def update_memory(
     return dict(row)
 
 
-def delete_memory(
-    memory_id: int, project_id: str = GENERAL_PROJECT_ID
-) -> bool:
+def delete_memory(memory_id: int, project_id: str = GENERAL_PROJECT_ID) -> bool:
     """Delete a memory visible in the current project or shared scope."""
     with _get_db() as conn:
         cursor = conn.execute(

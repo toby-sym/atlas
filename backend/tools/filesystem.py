@@ -160,9 +160,7 @@ def _ocr_pdf_page(document: pdfium.PdfDocument, index: int) -> str:
         page.close()
 
 
-def extract_file(
-    path: str, project_id: str = GENERAL_PROJECT_ID
-) -> str:  # pylint: disable=import-outside-toplevel,too-many-branches
+def extract_file(path: str, project_id: str = GENERAL_PROJECT_ID) -> str:  # pylint: disable=import-outside-toplevel,too-many-branches
     """Read a supported workspace document as text, with bounded extraction."""
     resolved = _resolve_project_path(path, project_id)
     if os.path.getsize(resolved) > MAX_FILE_BYTES:

@@ -240,7 +240,10 @@ def test_project_instructions_are_added_to_the_system_context():
         )
     )
     assert history[0]["role"] == "system"
-    assert "Instructions for the current project, set by the user:" in history[0]["content"]
+    assert (
+        "Instructions for the current project, set by the user:"
+        in history[0]["content"]
+    )
     assert "Use short paragraphs." in history[0]["content"]
 
 

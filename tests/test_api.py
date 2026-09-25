@@ -476,7 +476,9 @@ def test_project_files_are_isolated_attachable_and_preserved_on_delete(
 
     attached = client.post("/chat", json={**body, "project_id": project["id"]})
     assert attached.status_code == 200, attached.text
-    assert "Research notes stay in this project." in attached.json()["message"]["content"]
+    assert (
+        "Research notes stay in this project." in attached.json()["message"]["content"]
+    )
 
     deleted = client.delete(f"/projects/{project['id']}")
     assert deleted.status_code == 200, deleted.text
@@ -514,7 +516,9 @@ def test_project_instructions_are_passed_to_the_agent(monkeypatch, tmp_path):
     )
     assert response.status_code == 200, response.text
     assert captured["project_id"] == project_id
-    assert captured["project_instructions"] == "Use short paragraphs and plain language."
+    assert (
+        captured["project_instructions"] == "Use short paragraphs and plain language."
+    )
 
 
 def test_memories_are_scoped_shared_and_preserved_when_project_is_deleted(
@@ -533,15 +537,35 @@ def test_memories_are_scoped_shared_and_preserved_when_project_is_deleted(
 
     shared = client.post(
         f"/memories?project_id={first['id']}",
-        json={"key": "writing preference", "value": "Plain language", "scope": "shared"},
+        json={
+            "key": "writing preference",
+            "value": "Plain language",
+            "scope": "shared",
+        },
     )
     assert shared.status_code == 201, shared.text
-    first_memories = client.get(f"/memories?project_id={first['id']}").json()["memories"]
-    second_memories = client.get(f"/memories?project_id={second['id']}").json()["memories"]
-    assert {item["key"] for item in first_memories} == {"project plan", "writing preference"}
-    assert {item["key"] for item in second_memories} == {"project plan", "writing preference"}
-    assert next(item for item in first_memories if item["key"] == "project plan")["value"] == "Garden plan"
-    assert next(item for item in second_memories if item["key"] == "project plan")["value"] == "Studio plan"
+    first_memories = client.get(f"/memories?project_id={first['id']}").json()[
+        "memories"
+    ]
+    second_memories = client.get(f"/memories?project_id={second['id']}").json()[
+        "memories"
+    ]
+    assert {item["key"] for item in first_memories} == {
+        "project plan",
+        "writing preference",
+    }
+    assert {item["key"] for item in second_memories} == {
+        "project plan",
+        "writing preference",
+    }
+    assert (
+        next(item for item in first_memories if item["key"] == "project plan")["value"]
+        == "Garden plan"
+    )
+    assert (
+        next(item for item in second_memories if item["key"] == "project plan")["value"]
+        == "Studio plan"
+    )
 
     general_memory = client.post(
         "/memories?project_id=general",
@@ -551,7 +575,11 @@ def test_memories_are_scoped_shared_and_preserved_when_project_is_deleted(
     deleted = client.delete(f"/projects/{first['id']}")
     assert deleted.status_code == 200, deleted.text
     general_memories = client.get("/memories?project_id=general").json()["memories"]
-    plans = [item["value"] for item in general_memories if item["key"].startswith("project plan")]
+    plans = [
+        item["value"]
+        for item in general_memories
+        if item["key"].startswith("project plan")
+    ]
     assert set(plans) == {"General plan", "Garden plan"}
     assert client.get(f"/memories?project_id={first['id']}").status_code == 404
 
