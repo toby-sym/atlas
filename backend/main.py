@@ -36,8 +36,9 @@ from backend.tools.filesystem import (
     MAX_EXTRACTED_CHARS,
     MAX_FILE_BYTES,
     SUPPORTED_SUFFIXES,
-    _resolve_path,
+    _resolve_project_path,
     extract_file,
+    move_project_files_to_general,
     set_workspace_path,
 )
 from backend.tools.memory import set_memory_path
@@ -111,6 +112,7 @@ class ConversationPayload(BaseModel):
 class ProjectPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: StrictStr = Field(..., min_length=1, max_length=80)
+    instructions: StrictStr | None = Field(default=None, max_length=4000)
 
     @field_validator("name")
     @classmethod
@@ -118,9 +120,12 @@ class ProjectPayload(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("Project names cannot be blank.")
-        if value.casefold() == "general":
-            raise ValueError("General is a reserved project name.")
         return value
+
+    @field_validator("instructions")
+    @classmethod
+    def strip_project_instructions(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
 
 
 class ConversationTitlePayload(BaseModel):
@@ -141,6 +146,7 @@ class MemoryPayload(BaseModel):
     key: StrictStr = Field(..., min_length=1, max_length=200)
     value: StrictStr = Field(..., min_length=1, max_length=10000)
     category: StrictStr = Field(default="general", min_length=1, max_length=64)
+    scope: Literal["project", "shared"] = "project"
 
     @field_validator("key", "category")
     @classmethod
@@ -233,7 +239,9 @@ async def list_projects():
 @app.post("/projects", status_code=201)
 async def create_project(payload: ProjectPayload):
     try:
-        project = await asyncio.to_thread(project_store.create_project, payload.name)
+        project = await asyncio.to_thread(
+            project_store.create_project, payload.name, payload.instructions or ""
+        )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
             status_code=409, detail="A project with this name already exists."
@@ -249,7 +257,10 @@ async def create_project(payload: ProjectPayload):
 async def rename_project(project_id: str, payload: ProjectPayload):
     try:
         project = await asyncio.to_thread(
-            project_store.rename_project, project_id, payload.name
+            project_store.rename_project,
+            project_id,
+            payload.name,
+            payload.instructions,
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
@@ -277,6 +288,21 @@ async def delete_project(project_id: str):
         raise HTTPException(
             status_code=400, detail="The General project cannot be deleted."
         )
+    await _require_project(project_id)
+    project = await asyncio.to_thread(project_store.get_project, project_id)
+    try:
+        await asyncio.to_thread(move_project_files_to_general, project_id)
+        if project:
+            await asyncio.to_thread(
+                memory_store.move_project_memories_to_general,
+                project_id,
+                project["name"],
+            )
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Could not preserve this project's data in General. Resolve the storage issue and retry.",
+        ) from exc
     try:
         deleted = await asyncio.to_thread(project_store.delete_project, project_id)
     except sqlite3.Error as exc:
@@ -285,7 +311,7 @@ async def delete_project(project_id: str):
         ) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
-    return {"deleted": True}
+    return {"deleted": True, "files_moved_to_general": True}
 
 
 @app.get("/conversations")
@@ -362,10 +388,13 @@ def _require_memory_feature() -> None:
 
 
 @app.get("/memories")
-async def list_saved_memories():
+async def list_saved_memories(
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     _require_memory_feature()
+    await _require_project(project_id)
     try:
-        memories = await asyncio.to_thread(memory_store.list_memories)
+        memories = await asyncio.to_thread(memory_store.list_memories, project_id)
     except sqlite3.Error as exc:
         raise HTTPException(
             status_code=500, detail="Could not load saved memories."
@@ -374,14 +403,22 @@ async def list_saved_memories():
 
 
 @app.post("/memories", status_code=201)
-async def create_saved_memory(payload: MemoryPayload):
+async def create_saved_memory(
+    payload: MemoryPayload,
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     _require_memory_feature()
+    await _require_project(project_id)
+    memory_project_id = (
+        memory_store.SHARED_MEMORY_ID if payload.scope == "shared" else project_id
+    )
     try:
         memory = await asyncio.to_thread(
             memory_store.create_memory,
             payload.key,
             payload.value,
             payload.category,
+            memory_project_id,
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
@@ -395,8 +432,16 @@ async def create_saved_memory(payload: MemoryPayload):
 
 
 @app.put("/memories/{memory_id}")
-async def update_saved_memory(memory_id: int, payload: MemoryPayload):
+async def update_saved_memory(
+    memory_id: int,
+    payload: MemoryPayload,
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     _require_memory_feature()
+    await _require_project(project_id)
+    memory_project_id = (
+        memory_store.SHARED_MEMORY_ID if payload.scope == "shared" else project_id
+    )
     try:
         memory = await asyncio.to_thread(
             memory_store.update_memory,
@@ -404,6 +449,8 @@ async def update_saved_memory(memory_id: int, payload: MemoryPayload):
             payload.key,
             payload.value,
             payload.category,
+            memory_project_id,
+            project_id,
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
@@ -419,10 +466,16 @@ async def update_saved_memory(memory_id: int, payload: MemoryPayload):
 
 
 @app.delete("/memories/{memory_id}")
-async def delete_saved_memory(memory_id: int):
+async def delete_saved_memory(
+    memory_id: int,
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     _require_memory_feature()
+    await _require_project(project_id)
     try:
-        deleted = await asyncio.to_thread(memory_store.delete_memory, memory_id)
+        deleted = await asyncio.to_thread(
+            memory_store.delete_memory, memory_id, project_id
+        )
     except sqlite3.Error as exc:
         raise HTTPException(
             status_code=500, detail="Could not delete this memory."
@@ -435,12 +488,16 @@ async def delete_saved_memory(memory_id: int):
 # Upload validation has several distinct client errors with tailored responses.
 # pylint: disable=too-many-branches
 @app.post("/files")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     if not FILESYSTEM_ENABLED:
         raise HTTPException(
             status_code=503,
             detail="Workspace file tools are disabled in the current configuration.",
         )
+    await _require_project(project_id)
     filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     suffix = Path(filename).suffix.lower()
     if filename in ("", ".", ".."):
@@ -456,7 +513,7 @@ async def upload_file(file: UploadFile = File(...)):
     stored_name = f"{Path(filename).stem}-{uuid4().hex[:12]}{suffix}"
     target = None
     try:
-        target = _resolve_path(stored_name)
+        target = _resolve_project_path(stored_name, project_id)
         with open(target, "xb") as destination:
             size = 0
             while chunk := await file.read(1024 * 1024):
@@ -468,7 +525,7 @@ async def upload_file(file: UploadFile = File(...)):
                 destination.write(chunk)
         # Validate before reporting success so corrupt documents fail at upload time.
         try:
-            await asyncio.to_thread(extract_file, stored_name)
+            await asyncio.to_thread(extract_file, stored_name, project_id)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"filename": filename, "path": stored_name}
@@ -494,14 +551,17 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.get("/files")
-async def list_workspace_files():
+async def list_workspace_files(
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     if not FILESYSTEM_ENABLED:
         raise HTTPException(
             status_code=503,
             detail="Workspace file tools are disabled in the current configuration.",
         )
+    await _require_project(project_id)
     try:
-        root = Path(_resolve_path("."))
+        root = Path(_resolve_project_path(".", project_id))
         files = []
         for entry in root.iterdir():
             if not entry.is_file() or entry.is_symlink():
@@ -509,7 +569,7 @@ async def list_workspace_files():
             if entry.suffix.lower() not in SUPPORTED_SUFFIXES:
                 continue
             try:
-                resolved = Path(_resolve_path(entry.name))
+                resolved = Path(_resolve_project_path(entry.name, project_id))
                 stat = resolved.stat()
             except (OSError, ValueError):
                 continue
@@ -524,6 +584,8 @@ async def list_workspace_files():
                     .isoformat(timespec="minutes"),
                 }
             )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(
             status_code=500, detail="Could not list workspace files."
@@ -532,12 +594,16 @@ async def list_workspace_files():
 
 
 @app.delete("/files/{filename}")
-async def delete_workspace_file(filename: str):
+async def delete_workspace_file(
+    filename: str,
+    project_id: str = Query(default=project_store.GENERAL_PROJECT_ID, max_length=64),
+):
     if not FILESYSTEM_ENABLED:
         raise HTTPException(
             status_code=503,
             detail="Workspace file tools are disabled in the current configuration.",
         )
+    await _require_project(project_id)
     if (
         Path(filename).name != filename
         or filename in {".", ".."}
@@ -546,13 +612,13 @@ async def delete_workspace_file(filename: str):
     ):
         raise HTTPException(status_code=400, detail="Invalid workspace filename.")
     try:
-        root = Path(_resolve_path("."))
+        root = Path(_resolve_project_path(".", project_id))
         source = root / filename
         if source.is_symlink():
             raise HTTPException(
                 status_code=400, detail="Workspace links cannot be deleted here."
             )
-        target = Path(_resolve_path(filename))
+        target = Path(_resolve_project_path(filename, project_id))
         if target.suffix.lower() not in SUPPORTED_SUFFIXES:
             raise HTTPException(
                 status_code=400, detail="This file type is not supported."
@@ -599,7 +665,9 @@ async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]
                 status_code=400, detail="Attachment must be a workspace filename."
             )
         try:
-            attachment_context = await asyncio.to_thread(extract_file, filename)
+            attachment_context = await asyncio.to_thread(
+                extract_file, filename, request.project_id
+            )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if len(attachment_context) > MAX_EXTRACTED_CHARS:
@@ -611,9 +679,15 @@ async def _chat_inputs(request: ChatRequest) -> tuple[list[dict[str, str]], str]
     return messages, attachment_context
 
 
+async def _project_instructions(project_id: str) -> str:
+    project = await asyncio.to_thread(project_store.get_project, project_id)
+    return project.get("instructions", "") if project else ""
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     messages, attachment_context = await _chat_inputs(request)
+    project_instructions = await _project_instructions(request.project_id)
     try:
         assistant_message = await run_agent_loop(
             messages=messages,
@@ -626,6 +700,8 @@ async def chat(request: ChatRequest):
             web_enabled=WEB_ENABLED,
             memory_enabled=MEMORY_ENABLED,
             filesystem_enabled=FILESYSTEM_ENABLED,
+            project_id=request.project_id,
+            project_instructions=project_instructions,
         )
         return ChatResponse(message=assistant_message)
     except AgentServiceError as exc:
@@ -635,6 +711,7 @@ async def chat(request: ChatRequest):
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     messages, attachment_context = await _chat_inputs(request)
+    project_instructions = await _project_instructions(request.project_id)
 
     async def events():
         try:
@@ -649,6 +726,8 @@ async def chat_stream(request: ChatRequest):
                 web_enabled=WEB_ENABLED,
                 memory_enabled=MEMORY_ENABLED,
                 filesystem_enabled=FILESYSTEM_ENABLED,
+                project_id=request.project_id,
+                project_instructions=project_instructions,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except AgentServiceError as exc:

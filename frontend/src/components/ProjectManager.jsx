@@ -3,8 +3,10 @@ import { Icon } from "./SpatialUI";
 
 export default function ProjectManager({ projects, onClose, onCreate, onRename, onDelete }) {
   const [newName, setNewName] = useState("");
+  const [newInstructions, setNewInstructions] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
+  const [editingInstructions, setEditingInstructions] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -13,7 +15,10 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
     setBusy(true);
     setError("");
     try {
-      if (await onCreate(newName)) setNewName("");
+      if (await onCreate(newName, newInstructions)) {
+        setNewName("");
+        setNewInstructions("");
+      }
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -26,7 +31,7 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
     setBusy(true);
     setError("");
     try {
-      if (await onRename(editingId, editingName)) setEditingId(null);
+      if (await onRename(editingId, editingName, editingInstructions)) setEditingId(null);
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -61,7 +66,7 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
             <Icon name="close" size={16} />
           </button>
         </div>
-        <p className="project-modal-description">Projects keep related work together. General is where your existing Atlas conversations and files live.</p>
+        <p className="project-modal-description">Projects keep related work together. General holds your existing Atlas data. Deleting a project moves its saved work into General.</p>
         {error && <p className="project-manager-error" role="alert">{error}</p>}
         <form className="project-create-form" onSubmit={submitCreate}>
           <label>
@@ -74,6 +79,14 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
               required
               disabled={busy}
             />
+            <textarea
+              value={newInstructions}
+              onChange={(event) => setNewInstructions(event.target.value)}
+              maxLength={4000}
+              placeholder="Optional: tell Atlas how to work in this project"
+              rows={2}
+              disabled={busy}
+            />
           </label>
           <button className="primary-button" type="submit" disabled={busy || !newName.trim()}>
             <Icon name="plus" size={15} /> Create
@@ -84,17 +97,30 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
             <div className="project-manager-row" key={project.id}>
               {editingId === project.id ? (
                 <form className="project-rename-form" onSubmit={submitRename}>
-                  <input
-                    autoFocus
-                    aria-label={`New name for ${project.name}`}
-                    value={editingName}
-                    onChange={(event) => setEditingName(event.target.value)}
-                    maxLength={80}
-                    required
-                    disabled={busy}
-                  />
-                  <button type="submit" aria-label="Save project name" disabled={busy}><Icon name="check" size={14} /></button>
-                  <button type="button" aria-label="Cancel rename" onClick={() => setEditingId(null)} disabled={busy}><Icon name="close" size={14} /></button>
+                  <div className="project-rename-fields">
+                    <input
+                      autoFocus
+                      aria-label={`Project name for ${project.name}`}
+                      value={editingName}
+                      onChange={(event) => setEditingName(event.target.value)}
+                      maxLength={80}
+                      required
+                      disabled={busy || project.id === "general"}
+                    />
+                    <textarea
+                      aria-label={`Instructions for ${project.name}`}
+                      value={editingInstructions}
+                      onChange={(event) => setEditingInstructions(event.target.value)}
+                      maxLength={4000}
+                      placeholder="How should Atlas work in this project?"
+                      rows={2}
+                      disabled={busy}
+                    />
+                  </div>
+                  <div className="project-rename-actions">
+                    <button type="submit" aria-label="Save project" disabled={busy}><Icon name="check" size={14} /></button>
+                    <button type="button" aria-label="Cancel editing" onClick={() => setEditingId(null)} disabled={busy}><Icon name="close" size={14} /></button>
+                  </div>
                 </form>
               ) : (
                 <>
@@ -102,12 +128,12 @@ export default function ProjectManager({ projects, onClose, onCreate, onRename, 
                     <span className="workspace-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
                     <span>{project.name}{project.id === "general" && <small>Existing Atlas workspace</small>}</span>
                   </div>
-                  {project.id !== "general" && (
-                    <div className="project-manager-actions">
-                      <button type="button" disabled={busy} onClick={() => { setEditingId(project.id); setEditingName(project.name); setError(""); }}>Rename</button>
+                  <div className="project-manager-actions">
+                      <button type="button" disabled={busy} onClick={() => { setEditingId(project.id); setEditingName(project.name); setEditingInstructions(project.instructions || ""); setError(""); }}>Edit</button>
+                      {project.id !== "general" && (
                       <button type="button" disabled={busy} onClick={() => removeProject(project)}>Delete</button>
-                    </div>
-                  )}
+                      )}
+                  </div>
                 </>
               )}
             </div>

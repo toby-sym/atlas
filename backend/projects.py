@@ -29,22 +29,29 @@ def _connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            instructions TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(projects)")}
+    if "instructions" not in columns:
+        connection.execute(
+            "ALTER TABLE projects ADD COLUMN instructions TEXT NOT NULL DEFAULT ''"
+        )
     connection.execute(
         "INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)",
         (GENERAL_PROJECT_ID, "General"),
     )
+    connection.commit()
     return connection
 
 
 def list_projects() -> list[dict[str, Any]]:
     with closing(_connect()) as connection:
         rows = connection.execute(
-            "SELECT id, name, created_at, updated_at FROM projects "
+            "SELECT id, name, instructions, created_at, updated_at FROM projects "
             "ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, name COLLATE NOCASE",
             (GENERAL_PROJECT_ID,),
         ).fetchall()
@@ -59,35 +66,50 @@ def project_exists(project_id: str) -> bool:
     return row is not None
 
 
-def create_project(name: str) -> dict[str, Any]:
+def get_project(project_id: str) -> dict[str, Any] | None:
+    with closing(_connect()) as connection:
+        row = connection.execute(
+            "SELECT id, name, instructions, created_at, updated_at "
+            "FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def create_project(name: str, instructions: str = "") -> dict[str, Any]:
     project_id = str(uuid4())
     with closing(_connect()) as connection:
         with connection:
             connection.execute(
-                "INSERT INTO projects (id, name) VALUES (?, ?)",
-                (project_id, name),
+                "INSERT INTO projects (id, name, instructions) VALUES (?, ?, ?)",
+                (project_id, name, instructions),
             )
             row = connection.execute(
-                "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+                "SELECT id, name, instructions, created_at, updated_at "
+                "FROM projects WHERE id = ?",
                 (project_id,),
             ).fetchone()
     return dict(row)
 
 
-def rename_project(project_id: str, name: str) -> dict[str, Any] | None:
-    if project_id == GENERAL_PROJECT_ID:
+def rename_project(
+    project_id: str, name: str, instructions: str | None = None
+) -> dict[str, Any] | None:
+    if project_id == GENERAL_PROJECT_ID and name != "General":
         return None
     with closing(_connect()) as connection:
         with connection:
             cursor = connection.execute(
-                "UPDATE projects SET name = ?, updated_at = CURRENT_TIMESTAMP "
-                "WHERE id = ?",
-                (name, project_id),
+                "UPDATE projects SET name = ?, "
+                "instructions = COALESCE(?, instructions), "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (name, instructions, project_id),
             )
             if cursor.rowcount == 0:
                 return None
             row = connection.execute(
-                "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+                "SELECT id, name, instructions, created_at, updated_at "
+                "FROM projects WHERE id = ?",
                 (project_id,),
             ).fetchone()
     return dict(row)

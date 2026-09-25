@@ -1580,6 +1580,15 @@
   text-transform: uppercase;
   letter-spacing: 0.7px;
 }
+.memory-scope {
+  display: inline-flex;
+  margin: 0 0 7px 7px;
+  padding: 4px 8px;
+  border: 1px solid #b995e326;
+  border-radius: 99px;
+  color: #ab9fc0;
+  font-size: 9px;
+}
 .memory-card-heading h2 {
   margin: 0 0 5px;
   color: #dfd3e9;
@@ -1642,7 +1651,8 @@
   font-size: 10px;
 }
 .memory-field input,
-.memory-field textarea {
+.memory-field textarea,
+.memory-field select {
   width: 100%;
   box-sizing: border-box;
   padding: 10px 11px;
@@ -1656,12 +1666,17 @@
   line-height: 1.6;
 }
 .memory-field input:focus,
-.memory-field textarea:focus {
+.memory-field textarea:focus,
+.memory-field select:focus {
   border-color: #b098cf66;
 }
 .memory-field input::placeholder,
 .memory-field textarea::placeholder {
   color: #766a80;
+}
+.memory-field select option {
+  background: #171522;
+  color: #eee8f8;
 }
 .memory-value-field,
 .memory-form-actions {
@@ -2518,7 +2533,9 @@
   font-size: 10px;
 }
 .project-create-form input,
-.project-rename-form input {
+.project-create-form textarea,
+.project-rename-form input,
+.project-rename-form textarea {
   min-width: 0;
   padding: 9px 10px;
   border: 1px solid #ffffff18;
@@ -2529,7 +2546,9 @@
   font-size: 12px;
 }
 .project-create-form input:focus,
-.project-rename-form input:focus {
+.project-create-form textarea:focus,
+.project-rename-form input:focus,
+.project-rename-form textarea:focus {
   border-color: #b093e1a6;
 }
 .project-manager-error {
@@ -2589,8 +2608,22 @@
   width: 100%;
   gap: 6px;
 }
-.project-rename-form input {
+.project-rename-fields {
+  display: grid;
   flex: 1;
+  gap: 7px;
+}
+.project-rename-fields input,
+.project-rename-fields textarea {
+  width: 100%;
+}
+.project-rename-actions {
+  display: flex;
+  gap: 5px;
+}
+.project-create-form textarea,
+.project-rename-form textarea {
+  resize: vertical;
 }
 .project-modal-footer {
   padding-top: 13px;
