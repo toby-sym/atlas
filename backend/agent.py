@@ -271,7 +271,12 @@ async def _prepare_history(
 
 # The loop coordinates model calls, optional evidence, tool execution, and finalization.
 # Keep its explicit arguments for the existing API and tests.
-def _add_project_context(name: str, arguments: dict[str, Any], project_id: str) -> None:
+def _add_project_context(
+    name: str,
+    arguments: dict[str, Any],
+    project_id: str,
+    conversation_id: str | None,
+) -> None:
     if name in {"read_file", "recall_memory"}:
         arguments["project_id"] = project_id
     elif name == "save_memory":
@@ -279,6 +284,7 @@ def _add_project_context(name: str, arguments: dict[str, Any], project_id: str) 
         if scope not in {"project", "shared"}:
             raise ValueError("memory scope must be project or shared")
         arguments["project_id"] = "shared" if scope == "shared" else project_id
+        arguments["source_conversation_id"] = conversation_id
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-branches,too-many-statements
@@ -295,6 +301,7 @@ async def run_agent_loop(
     filesystem_enabled: bool = True,
     project_id: str = "general",
     project_instructions: str = "",
+    conversation_id: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= max_steps <= 10:
         raise ValueError("max_steps must be between 1 and 10.")
@@ -370,7 +377,9 @@ async def run_agent_loop(
                     if name not in enabled_tools:
                         output = f"Error: Tool '{name}' is disabled by configuration."
                     else:
-                        _add_project_context(name, arguments, project_id)
+                        _add_project_context(
+                            name, arguments, project_id, conversation_id
+                        )
                         output = await registry.execute(name, arguments)
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                     logger.warning("Ignoring malformed tool call: %s", exc)
@@ -457,6 +466,7 @@ async def stream_agent_loop(
     filesystem_enabled: bool = True,
     project_id: str = "general",
     project_instructions: str = "",
+    conversation_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield live answer tokens and tool activity through the SSE API."""
     if not 1 <= max_steps <= 10:
@@ -547,6 +557,7 @@ async def stream_agent_loop(
                             arguments["project_id"] = (
                                 "shared" if scope == "shared" else project_id
                             )
+                            arguments["source_conversation_id"] = conversation_id
                         output = await registry.execute(name, arguments)
                 except (ValueError, TypeError) as exc:
                     output = f"Invalid tool call: {exc}"

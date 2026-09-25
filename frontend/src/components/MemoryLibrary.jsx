@@ -95,7 +95,7 @@ function updatedLabel(value) {
   return Number.isNaN(date.getTime()) ? "Saved locally" : `Updated ${date.toLocaleString()}`;
 }
 
-export default function MemoryLibrary({ enabled, connection, projectId, projectName }) {
+export default function MemoryLibrary({ enabled, connection, projectId, projectName, onOpenConversation }) {
   const [api, setApi] = useState(null);
   const [memories, setMemories] = useState([]);
   const [search, setSearch] = useState("");
@@ -345,6 +345,14 @@ export default function MemoryLibrary({ enabled, connection, projectId, projectN
                         </div>
                       </div>
                       <p className="memory-details">{memory.value}</p>
+                      <div className="memory-source-row">
+                        <span>{memory.source === "chat" ? "Saved from a conversation" : "Added in the memory library"}</span>
+                        {memory.source_conversation_id && (
+                          <button type="button" onClick={() => onOpenConversation(memory.source_conversation_id)}>
+                            Open conversation
+                          </button>
+                        )}
+                      </div>
                     </>
                   )}
                 </article>
