@@ -4,6 +4,10 @@ import App from "./App";
 
 global.TextDecoder = TextDecoder;
 
+function pathname(url) {
+  return new URL(url, "http://atlas.test").pathname;
+}
+
 const readyStatus = {
   backend: "ready",
   model: { state: "ready", name: "qwen3:4b" },
@@ -11,13 +15,18 @@ const readyStatus = {
 };
 
 beforeEach(() => {
+  window.localStorage.clear();
   global.fetch = jest.fn(async (url) => ({
     ok: true,
-    json: async () => url.endsWith("/status")
+    json: async () => pathname(url) === "/status"
       ? readyStatus
-      : url.endsWith("/conversations")
+      : pathname(url) === "/conversations"
         ? { conversations: [] }
-        : url.endsWith("/chat/stream")
+        : pathname(url) === "/projects"
+          ? { projects: [{ id: "general", name: "General" }] }
+          : pathname(url) === "/files"
+            ? { files: [] }
+            : pathname(url) === "/chat/stream"
           ? { message: { role: "assistant", content: "Done." } }
           : { saved: true },
   }));
@@ -32,7 +41,10 @@ async function connectedApp() {
   render(<App />);
   await screen.findByText("Backend connected");
   await screen.findByText("Model ready: qwen3:4b");
-  await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith("/conversations"))).toBe(true));
+  await waitFor(() => {
+    const paths = fetch.mock.calls.map(([url]) => pathname(url));
+    expect(paths).toEqual(expect.arrayContaining(["/conversations", "/projects", "/files"]));
+  });
 }
 
 test("suggestions populate and focus the dock without sending a request", async () => {
@@ -56,9 +68,41 @@ test("sends original text, typed preferences, and selected attachment", async ()
   const request = JSON.parse(fetch.mock.calls.find(([url]) => url.endsWith("/chat/stream"))[1].body);
   expect(request).toEqual({
     messages: [{ role: "user", content: "Plan my project" }],
+    project_id: "general",
     context: { research: true, memory: false },
     attachments: [],
   });
+});
+
+test("switching projects scopes the next chat and its conversation list", async () => {
+  global.fetch.mockImplementation(async (url) => ({
+    ok: true,
+    json: async () => pathname(url) === "/status"
+      ? readyStatus
+      : pathname(url) === "/projects"
+        ? { projects: [{ id: "general", name: "General" }, { id: "garden-id", name: "Garden" }] }
+        : pathname(url) === "/conversations"
+          ? { conversations: [] }
+          : pathname(url) === "/files"
+            ? { files: [] }
+            : pathname(url) === "/chat/stream"
+              ? { message: { role: "assistant", content: "Garden answer." } }
+              : { saved: true },
+  }));
+  await connectedApp();
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Current project" }), {
+    target: { value: "garden-id" },
+  });
+  await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.includes("/conversations?project_id=garden-id"))).toBe(true));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message Atlas" }), {
+    target: { value: "Plan the garden" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByText("Garden answer.");
+
+  const chatCall = fetch.mock.calls.find(([url]) => pathname(url) === "/chat/stream");
+  expect(JSON.parse(chatCall[1].body).project_id).toBe("garden-id");
 });
 
 test("new session aborts a pending request and ignores its late response", async () => {
@@ -122,7 +166,7 @@ test("successful upload selects the file and sends it as an attachment", async (
   await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() => expect(fetch.mock.calls.some(([url]) => url.endsWith("/chat/stream"))).toBe(true));
-  const request = JSON.parse(fetch.mock.calls.find(([url]) => url.endsWith("/chat/stream"))[1].body);
+  const request = JSON.parse(fetch.mock.calls.find(([url]) => pathname(url) === "/chat/stream")[1].body);
   expect(request.attachments).toEqual(["notes.txt"]);
   expect(request.messages.at(-1).content).toContain("Summarize the attached file");
   await waitFor(() => expect(screen.queryByText("Attached: notes.txt")).not.toBeInTheDocument());
@@ -191,8 +235,14 @@ test("streams a partial answer before the final response arrives", async () => {
   };
   fetch.mockImplementation(async (url) => ({
     ok: true,
-    body: url.endsWith("/chat/stream") ? { getReader: () => reader } : undefined,
-    json: async () => url.endsWith("/status") ? readyStatus : { conversations: [] },
+    body: pathname(url) === "/chat/stream" ? { getReader: () => reader } : undefined,
+    json: async () => pathname(url) === "/status"
+      ? readyStatus
+      : pathname(url) === "/projects"
+        ? { projects: [{ id: "general", name: "General" }] }
+        : pathname(url) === "/files"
+          ? { files: [] }
+          : { conversations: [] },
   }));
   await connectedApp();
   fireEvent.change(screen.getByRole("textbox", { name: "Message Atlas" }), { target: { value: "Hello" } });
@@ -210,9 +260,11 @@ test("opens and deletes a saved conversation", async () => {
   fetch.mockImplementation(async (url, options = {}) => ({
     ok: true,
     json: async () => {
-      if (url.endsWith("/status")) return readyStatus;
-      if (url.endsWith("/conversations")) return { conversations: [{ id, title: "Old chat" }] };
-      if (url.endsWith(`/${id}`) && options.method !== "DELETE" && options.method !== "PUT")
+      if (pathname(url) === "/status") return readyStatus;
+      if (pathname(url) === "/projects") return { projects: [{ id: "general", name: "General" }] };
+      if (pathname(url) === "/files") return { files: [] };
+      if (pathname(url) === "/conversations") return { conversations: [{ id, title: "Old chat" }] };
+      if (pathname(url) === `/conversations/${id}` && options.method !== "DELETE" && options.method !== "PUT")
         return { messages: [{ role: "user", content: "Earlier question" }, { role: "assistant", content: "Earlier answer" }] };
       return { saved: true };
     },
