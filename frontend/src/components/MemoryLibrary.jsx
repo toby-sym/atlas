@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { backendHeaders, resolveBackend } from "../backendClient";
 import { Icon } from "./SpatialUI";
 
-const emptyForm = { key: "", category: "general", value: "" };
+const emptyForm = { key: "", category: "general", value: "", scope: "project" };
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -16,7 +16,7 @@ async function requestJson(url, options = {}) {
   return result;
 }
 
-function MemoryForm({ initial, busy, onCancel, onSubmit }) {
+function MemoryForm({ initial, busy, onCancel, onSubmit, projectName }) {
   const [form, setForm] = useState(() => ({ ...initial }));
 
   function change(field, value) {
@@ -29,6 +29,7 @@ function MemoryForm({ initial, busy, onCancel, onSubmit }) {
       key: form.key.trim(),
       category: form.category.trim() || "general",
       value: form.value,
+      scope: form.scope || "project",
     });
   }
 
@@ -53,6 +54,17 @@ function MemoryForm({ initial, busy, onCancel, onSubmit }) {
           placeholder="general"
           required
         />
+      </label>
+      <label className="memory-field">
+        <span>Visible in</span>
+        <select
+          value={form.scope || "project"}
+          onChange={(event) => change("scope", event.target.value)}
+          disabled={busy}
+        >
+          <option value="project">{projectName}</option>
+          <option value="shared">Personal · shared across projects</option>
+        </select>
       </label>
       <label className="memory-field memory-value-field">
         <span>Details</span>
@@ -83,7 +95,7 @@ function updatedLabel(value) {
   return Number.isNaN(date.getTime()) ? "Saved locally" : `Updated ${date.toLocaleString()}`;
 }
 
-export default function MemoryLibrary({ enabled, connection }) {
+export default function MemoryLibrary({ enabled, connection, projectId, projectName }) {
   const [api, setApi] = useState(null);
   const [memories, setMemories] = useState([]);
   const [search, setSearch] = useState("");
@@ -100,6 +112,11 @@ export default function MemoryLibrary({ enabled, connection }) {
     if (!enabled || connection !== "online") return undefined;
     const controller = new AbortController();
     let current = true;
+    setMemories([]);
+    setSearch("");
+    setCreating(false);
+    setEditingId(null);
+    setDeletingId(null);
     setLoading(true);
     setLoadError("");
 
@@ -108,7 +125,7 @@ export default function MemoryLibrary({ enabled, connection }) {
         const info = await resolveBackend();
         if (!current) return;
         setApi(info);
-        const result = await requestJson(`${info.baseUrl}/memories`, {
+        const result = await requestJson(`${info.baseUrl}/memories?project_id=${encodeURIComponent(projectId)}`, {
           headers: backendHeaders(info.token),
           signal: controller.signal,
         });
@@ -125,7 +142,7 @@ export default function MemoryLibrary({ enabled, connection }) {
       current = false;
       controller.abort();
     };
-  }, [enabled, connection, loadAttempt]);
+  }, [enabled, connection, loadAttempt, projectId]);
 
   const visibleMemories = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -144,8 +161,8 @@ export default function MemoryLibrary({ enabled, connection }) {
       const creatingMemory = memoryId === null;
       const result = await requestJson(
         creatingMemory
-          ? `${api.baseUrl}/memories`
-          : `${api.baseUrl}/memories/${memoryId}`,
+          ? `${api.baseUrl}/memories?project_id=${encodeURIComponent(projectId)}`
+          : `${api.baseUrl}/memories/${memoryId}?project_id=${encodeURIComponent(projectId)}`,
         {
           method: creatingMemory ? "POST" : "PUT",
           headers: backendHeaders(api.token, { "Content-Type": "application/json" }),
@@ -171,7 +188,7 @@ export default function MemoryLibrary({ enabled, connection }) {
     setBusy(true);
     setError("");
     try {
-      await requestJson(`${api.baseUrl}/memories/${memoryId}`, {
+      await requestJson(`${api.baseUrl}/memories/${memoryId}?project_id=${encodeURIComponent(projectId)}`, {
         method: "DELETE",
         headers: backendHeaders(api.token),
       });
@@ -189,7 +206,7 @@ export default function MemoryLibrary({ enabled, connection }) {
       <div className="page-heading">
         <div className="greeting">A LITTLE CONTEXT GOES A LONG WAY</div>
         <h1>Keep the important things close.</h1>
-        <p>Review and manage the facts Atlas has saved on this machine.</p>
+        <p>Project memories stay in {projectName}. Personal memories are shared with your other projects.</p>
       </div>
 
       {!enabled ? (
@@ -239,6 +256,7 @@ export default function MemoryLibrary({ enabled, connection }) {
               <MemoryForm
                 initial={emptyForm}
                 busy={busy}
+                projectName={projectName}
                 onCancel={() => setCreating(false)}
                 onSubmit={(values) => saveMemory(null, values)}
               />
@@ -273,8 +291,10 @@ export default function MemoryLibrary({ enabled, connection }) {
                         key: memory.key,
                         category: memory.category || "general",
                         value: memory.value,
+                        scope: memory.project_id === "shared" ? "shared" : "project",
                       }}
                       busy={busy}
+                      projectName={projectName}
                       onCancel={() => setEditingId(null)}
                       onSubmit={(values) => saveMemory(memory.id, values)}
                     />
@@ -283,6 +303,7 @@ export default function MemoryLibrary({ enabled, connection }) {
                       <div className="memory-card-heading">
                         <div>
                           <span className="memory-category">{memory.category || "general"}</span>
+                          <span className="memory-scope">{memory.project_id === "shared" ? "Personal · shared" : projectName}</span>
                           <h2>{memory.key}</h2>
                           <time>{updatedLabel(memory.updated_at)}</time>
                         </div>

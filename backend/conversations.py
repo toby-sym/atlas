@@ -9,6 +9,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from backend import projects as project_store
 from backend.settings import CONVERSATIONS_PATH
 
 DB_PATH = Path(CONVERSATIONS_PATH)
@@ -17,6 +18,7 @@ DB_PATH = Path(CONVERSATIONS_PATH)
 def set_conversations_path(path: str) -> None:
     global DB_PATH  # pylint: disable=global-statement
     DB_PATH = Path(path)
+    project_store.set_projects_path(path)
 
 
 def _connect() -> sqlite3.Connection:
@@ -42,6 +44,7 @@ def _connect() -> sqlite3.Connection:
         connection.execute(
             "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'general'"
         )
+    connection.commit()
     return connection
 
 

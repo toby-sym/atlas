@@ -206,7 +206,7 @@ export default function App() {
     async function loadWorkspaceFiles() {
       try {
         const info = apiRef.current || await resolveBackend();
-        const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+        const response = await fetch(`${info.baseUrl}/files?project_id=${encodeURIComponent(activeProjectId)}`, { headers: backendHeaders(info.token) });
         if (!response.ok) return;
         const data = await response.json();
         if (!cancelled) setFiles(data.files || []);
@@ -217,6 +217,10 @@ export default function App() {
     loadWorkspaceFiles();
     return () => { cancelled = true; };
   }, [connection, activeProjectId]);
+  useEffect(() => {
+    setFiles([]);
+    setSelectedFile(null);
+  }, [activeProjectId]);
   useEffect(() => {
     const search = conversationSearch.trim();
     if (!search) {
@@ -507,12 +511,12 @@ export default function App() {
     try { window.localStorage.setItem("atlas.activeProject", projectId); }
     catch { /* The project remains selected until the app closes. */ }
   }
-  async function createProject(name) {
+  async function createProject(name, instructions) {
     const info = apiRef.current || await resolveBackend();
     const response = await fetch(`${info.baseUrl}/projects`, {
       method: "POST",
       headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, instructions }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "Could not create this project.");
@@ -522,12 +526,12 @@ export default function App() {
     setProjectManagerOpen(false);
     return true;
   }
-  async function renameProject(projectId, name) {
+  async function renameProject(projectId, name, instructions) {
     const info = apiRef.current || await resolveBackend();
     const response = await fetch(`${info.baseUrl}/projects/${encodeURIComponent(projectId)}`, {
       method: "PATCH",
       headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, instructions }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "Could not rename this project.");
@@ -559,7 +563,7 @@ export default function App() {
     try {
       const connectionInfo = apiRef.current || await resolveBackend();
       apiRef.current = connectionInfo;
-      const response = await fetch(`${connectionInfo.baseUrl}/files`, {
+      const response = await fetch(`${connectionInfo.baseUrl}/files?project_id=${encodeURIComponent(activeProjectId)}`, {
         method: "POST",
         body,
         headers: backendHeaders(connectionInfo.token),
@@ -586,7 +590,7 @@ export default function App() {
   }
   async function refreshWorkspaceFiles() {
     const info = apiRef.current || await resolveBackend();
-    const response = await fetch(`${info.baseUrl}/files`, { headers: backendHeaders(info.token) });
+    const response = await fetch(`${info.baseUrl}/files?project_id=${encodeURIComponent(activeProjectId)}`, { headers: backendHeaders(info.token) });
     if (!response.ok) throw new Error("Could not refresh workspace files.");
     const data = await response.json();
     setFiles(data.files || []);
@@ -595,7 +599,7 @@ export default function App() {
     if (!window.confirm(`Delete ${file.filename} from the Atlas workspace?`)) return;
     try {
       const info = apiRef.current || await resolveBackend();
-      const response = await fetch(`${info.baseUrl}/files/${encodeURIComponent(file.path)}`, {
+      const response = await fetch(`${info.baseUrl}/files/${encodeURIComponent(file.path)}?project_id=${encodeURIComponent(activeProjectId)}`, {
         method: "DELETE",
         headers: backendHeaders(info.token),
       });
@@ -688,7 +692,7 @@ export default function App() {
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
-          <button className="project-manage-button" type="button" onClick={() => setProjectManagerOpen(true)} aria-label="Manage projects" title="Manage projects" disabled={connection !== "online"}>
+          <button className="project-manage-button" type="button" onClick={() => setProjectManagerOpen(true)} aria-label="Manage projects" title="Manage projects" disabled={connection !== "online" || busy}>
             <Icon name="edit" size={14} />
           </button>
         </div>
@@ -1086,7 +1090,12 @@ export default function App() {
               )}
             </div>
           ) : view === "Memory" ? (
-            <MemoryLibrary enabled={contextFeatures.memory} connection={connection} />
+            <MemoryLibrary
+              enabled={contextFeatures.memory}
+              connection={connection}
+              projectId={activeProjectId}
+              projectName={activeProject?.name || "General"}
+            />
           ) : (
             <div className="library-content">
               <div className="page-heading">
