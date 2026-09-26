@@ -93,9 +93,20 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=100)
     model: StrictStr | None = None
     project_id: StrictStr = project_store.GENERAL_PROJECT_ID
+    conversation_id: StrictStr | None = None
     max_steps: int = Field(default=5, ge=1, le=10)
     context: ContextPreferences = Field(default_factory=ContextPreferences)
     attachments: list[StrictStr] = Field(default_factory=list, max_length=1)
+
+    @field_validator("conversation_id")
+    @classmethod
+    def normalize_conversation_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except ValueError as exc:
+            raise ValueError("Invalid conversation ID.") from exc
 
 
 class ChatResponse(BaseModel):
@@ -371,11 +382,13 @@ async def rename_saved_conversation(
 
 @app.delete("/conversations/{conversation_id}")
 async def delete_saved_conversation(conversation_id: str):
+    normalized_id = _conversation_id(conversation_id)
     deleted = await asyncio.to_thread(
-        conversation_store.delete_conversation, _conversation_id(conversation_id)
+        conversation_store.delete_conversation, normalized_id
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found.")
+    await asyncio.to_thread(memory_store.clear_conversation_source, normalized_id)
     return {"deleted": True}
 
 
@@ -418,7 +431,7 @@ async def create_saved_memory(
             payload.key,
             payload.value,
             payload.category,
-            memory_project_id,
+            memory_store.MemoryCreateOptions(project_id=memory_project_id),
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(
@@ -703,6 +716,7 @@ async def chat(request: ChatRequest):
             filesystem_enabled=FILESYSTEM_ENABLED,
             project_id=request.project_id,
             project_instructions=project_instructions,
+            conversation_id=request.conversation_id,
         )
         return ChatResponse(message=assistant_message)
     except AgentServiceError as exc:
@@ -729,6 +743,7 @@ async def chat_stream(request: ChatRequest):
                 filesystem_enabled=FILESYSTEM_ENABLED,
                 project_id=request.project_id,
                 project_instructions=project_instructions,
+                conversation_id=request.conversation_id,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except AgentServiceError as exc:

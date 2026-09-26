@@ -270,6 +270,73 @@ def test_memory_recall_receives_the_active_project_id(monkeypatch):
     assert recalled_projects == ["garden-id"]
 
 
+def test_streaming_memory_tool_receives_project_and_source_conversation(monkeypatch):
+    conversation_id = "660a15e9-8cb2-46d0-b75e-36b6eaa08601"
+    captured = {}
+    model_calls = 0
+
+    async def fake_deltas(_client, _url, payload):
+        nonlocal model_calls
+        model_calls += 1
+        if payload.get("tools"):
+            yield {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_save",
+                        "function": {
+                            "name": "save_memory",
+                            "arguments": json_lib.dumps(
+                                {
+                                    "key": "preferred format",
+                                    "value": "Plain text",
+                                    "scope": "project",
+                                }
+                            ),
+                        },
+                    }
+                ]
+            }
+        else:
+            yield {"content": "Saved."}
+
+    async def fake_execute(name, arguments):
+        captured["name"] = name
+        captured.update(arguments)
+        return "Saved."
+
+    monkeypatch.setattr(agent, "_stream_model_deltas", fake_deltas)
+    monkeypatch.setattr(agent.registry, "execute", fake_execute)
+
+    async def collect_events():
+        return [
+            event
+            async for event in agent.stream_agent_loop(
+                [{"role": "user", "content": "Hello."}],
+                max_steps=1,
+                memory_enabled=True,
+                filesystem_enabled=False,
+                web_enabled=False,
+                project_id="garden-id",
+                conversation_id=conversation_id,
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+    assert model_calls == 2
+    assert captured == {
+        "name": "save_memory",
+        "key": "preferred format",
+        "value": "Plain text",
+        "project_id": "garden-id",
+        "source_conversation_id": conversation_id,
+    }
+    assert events[-1] == {
+        "type": "done",
+        "message": {"role": "assistant", "content": "Saved."},
+    }
+
+
 def test_malformed_tool_arguments_are_reported_to_model(monkeypatch):
     class Response:
         def __init__(self, payload):

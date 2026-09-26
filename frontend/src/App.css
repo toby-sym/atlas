@@ -1639,6 +1639,30 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.memory-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid #ffffff0a;
+  color: #797386;
+  font-size: 9px;
+}
+.memory-source-row button {
+  padding: 5px 8px;
+  border: 1px solid #b995e32b;
+  border-radius: 6px;
+  background: #b995e30a;
+  color: #c8b8e4;
+  cursor: pointer;
+  font-size: 9px;
+}
+.memory-source-row button:hover {
+  border-color: #b995e36b;
+  color: #eee4fb;
+}
 .memory-form {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(130px, 1fr);

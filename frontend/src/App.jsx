@@ -348,7 +348,8 @@ export default function App() {
     const controller = new AbortController();
     requestRef.current = controller;
     const history = [...messages, { role: "user", content: text }];
-    if (!activeConversationId) setActiveConversationId(newConversationId());
+    const conversationId = activeConversationId || newConversationId();
+    setActiveConversationId(conversationId);
     setPreview(false);
     setMessages(history);
     setView("Conversation");
@@ -370,6 +371,7 @@ export default function App() {
         body: JSON.stringify({
           messages: payload,
           project_id: activeProjectId,
+          conversation_id: conversationId,
           ...(activeModel !== modelName ? { model: activeModel } : {}),
           context,
           attachments: sentAttachment ? [sentAttachment.path] : [],
@@ -1095,6 +1097,7 @@ export default function App() {
               connection={connection}
               projectId={activeProjectId}
               projectName={activeProject?.name || "General"}
+              onOpenConversation={openConversation}
             />
           ) : (
             <div className="library-content">

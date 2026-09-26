@@ -14,6 +14,15 @@ DB_PATH = Path(os.getenv("ATLAS_MEMORY_DB", "backend/data/memory.db"))
 
 
 @dataclass(frozen=True)
+class MemoryCreateOptions:
+    """Scope and provenance fields for creating a saved memory."""
+
+    project_id: str = GENERAL_PROJECT_ID
+    source: str = "library"
+    source_conversation_id: str | None = None
+
+
+@dataclass(frozen=True)
 class MemoryUpdateOptions:
     """Scope fields for updating a memory visible in one project."""
 
@@ -40,6 +49,8 @@ def _get_db() -> sqlite3.Connection:
             value TEXT NOT NULL,
             category TEXT NOT NULL,
             project_id TEXT NOT NULL DEFAULT 'general',
+            source TEXT NOT NULL DEFAULT 'library',
+            source_conversation_id TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, key)
         )
@@ -50,6 +61,12 @@ def _get_db() -> sqlite3.Connection:
         conn.execute(
             "ALTER TABLE memories ADD COLUMN project_id TEXT NOT NULL DEFAULT 'general'"
         )
+    if "source" not in columns:
+        conn.execute(
+            "ALTER TABLE memories ADD COLUMN source TEXT NOT NULL DEFAULT 'library'"
+        )
+    if "source_conversation_id" not in columns:
+        conn.execute("ALTER TABLE memories ADD COLUMN source_conversation_id TEXT")
 
     has_global_key_unique = False
     for index in conn.execute("PRAGMA index_list(memories)").fetchall():
@@ -74,6 +91,8 @@ def _get_db() -> sqlite3.Connection:
                 value TEXT NOT NULL,
                 category TEXT NOT NULL,
                 project_id TEXT NOT NULL DEFAULT 'general',
+                source TEXT NOT NULL DEFAULT 'library',
+                source_conversation_id TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(project_id, key)
             )
@@ -82,8 +101,10 @@ def _get_db() -> sqlite3.Connection:
         conn.execute(
             """
             INSERT INTO memories_project_migration
-                (id, key, value, category, project_id, updated_at)
-            SELECT id, key, value, category, project_id, updated_at FROM memories
+                (id, key, value, category, project_id, source,
+                 source_conversation_id, updated_at)
+            SELECT id, key, value, category, project_id, source,
+                   source_conversation_id, updated_at FROM memories
             """
         )
         conn.execute("DROP TABLE memories")
@@ -97,19 +118,23 @@ def save_memory(
     value: str,
     category: str = "general",
     project_id: str = GENERAL_PROJECT_ID,
+    source_conversation_id: str | None = None,
 ) -> str:
     try:
         with _get_db() as conn:
             conn.execute(
                 """
-                INSERT INTO memories (key, value, category, project_id)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO memories
+                    (key, value, category, project_id, source, source_conversation_id)
+                VALUES (?, ?, ?, ?, 'chat', ?)
                 ON CONFLICT(project_id, key) DO UPDATE SET
                     value = excluded.value,
                     category = excluded.category,
+                    source = excluded.source,
+                    source_conversation_id = excluded.source_conversation_id,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (key, value, category, project_id),
+                (key, value, category, project_id, source_conversation_id),
             )
         return f"Successfully saved memory for '{key}'."
     except sqlite3.Error as exc:
@@ -121,7 +146,8 @@ def list_memories(project_id: str = GENERAL_PROJECT_ID) -> list[dict[str, Any]]:
     """Return current-project memories and explicitly shared personal memories."""
     with _get_db() as conn:
         rows = conn.execute(
-            "SELECT id, key, value, category, project_id, updated_at FROM memories "
+            "SELECT id, key, value, category, project_id, source, "
+            "source_conversation_id, updated_at FROM memories "
             "WHERE project_id IN (?, ?) ORDER BY updated_at DESC, id DESC",
             (project_id, SHARED_MEMORY_ID),
         ).fetchall()
@@ -132,16 +158,27 @@ def create_memory(
     key: str,
     value: str,
     category: str,
-    project_id: str = GENERAL_PROJECT_ID,
+    options: MemoryCreateOptions | None = None,
 ) -> dict[str, Any]:
     """Create a memory without replacing an existing key in the same scope."""
+    options = options or MemoryCreateOptions()
     with _get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO memories (key, value, category, project_id) VALUES (?, ?, ?, ?)",
-            (key, value, category, project_id),
+            "INSERT INTO memories "
+            "(key, value, category, project_id, source, source_conversation_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                key,
+                value,
+                category,
+                options.project_id,
+                options.source,
+                options.source_conversation_id,
+            ),
         )
         row = conn.execute(
-            "SELECT id, key, value, category, project_id, updated_at "
+            "SELECT id, key, value, category, project_id, source, "
+            "source_conversation_id, updated_at "
             "FROM memories WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
@@ -175,7 +212,8 @@ def update_memory(
         if cursor.rowcount == 0:
             return None
         row = conn.execute(
-            "SELECT id, key, value, category, project_id, updated_at "
+            "SELECT id, key, value, category, project_id, source, "
+            "source_conversation_id, updated_at "
             "FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
@@ -220,6 +258,23 @@ def move_project_memories_to_general(project_id: str, project_name: str) -> None
             )
 
 
+def clear_conversation_source(conversation_id: str) -> None:
+    """Leave a saved memory intact if its source conversation is deleted."""
+    if not DB_PATH.exists():
+        return
+    try:
+        with _get_db() as conn:
+            conn.execute(
+                "UPDATE memories SET source_conversation_id = NULL "
+                "WHERE source_conversation_id = ?",
+                (conversation_id,),
+            )
+    except sqlite3.Error as exc:
+        logger.warning(
+            "Could not clear deleted conversation provenance for memories: %s", exc
+        )
+
+
 def recall_memory(
     query: str = "", project_id: str = GENERAL_PROJECT_ID
 ) -> list[dict[str, Any]]:
@@ -228,14 +283,14 @@ def recall_memory(
         with _get_db() as conn:
             if query:
                 rows = conn.execute(
-                    "SELECT key, value, category, project_id FROM memories "
+                    "SELECT key, value, category FROM memories "
                     "WHERE project_id IN (?, ?) AND (key LIKE ? OR value LIKE ?) "
                     "ORDER BY updated_at DESC LIMIT 20",
                     (project_id, SHARED_MEMORY_ID, f"%{query}%", f"%{query}%"),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT key, value, category, project_id FROM memories "
+                    "SELECT key, value, category FROM memories "
                     "WHERE project_id IN (?, ?) ORDER BY updated_at DESC LIMIT 20",
                     (project_id, SHARED_MEMORY_ID),
                 ).fetchall()

@@ -126,6 +126,7 @@ def test_chat_passes_preferences_attachment_and_messages(monkeypatch, tmp_path):
     document.add_paragraph("Keep the launch checklist short.")
     document.save(workspace)
     captured = {}
+    conversation_id = str(uuid4())
 
     async def fake_agent(**kwargs):
         captured.update(kwargs)
@@ -138,6 +139,7 @@ def test_chat_passes_preferences_attachment_and_messages(monkeypatch, tmp_path):
             "messages": [{"role": "user", "content": "Summarize this"}],
             "context": {"research": True, "memory": True},
             "attachments": ["notes.docx"],
+            "conversation_id": conversation_id,
         },
     )
     assert response.status_code == 200
@@ -146,6 +148,7 @@ def test_chat_passes_preferences_attachment_and_messages(monkeypatch, tmp_path):
     assert captured["research"] is True
     assert captured["recall"] is True
     assert "launch checklist" in captured["attachment_context"]
+    assert captured["conversation_id"] == conversation_id
 
 
 def test_chat_rejects_invalid_history_and_step_limits(monkeypatch, tmp_path):
@@ -162,6 +165,16 @@ def test_chat_rejects_invalid_history_and_step_limits(monkeypatch, tmp_path):
             json={
                 "messages": [{"role": "user", "content": "hello"}],
                 "max_steps": None,
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/chat",
+            json={
+                "messages": [{"role": "user", "content": "hello"}],
+                "conversation_id": "not-a-uuid",
             },
         ).status_code
         == 422
@@ -335,6 +348,38 @@ def test_saved_conversation_crud(monkeypatch, tmp_path):
     )
     assert client.delete(f"/conversations/{conversation_id}").status_code == 200
     assert client.get(f"/conversations/{conversation_id}").status_code == 404
+
+
+def test_deleting_a_conversation_clears_memory_source_link(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    conversation_id = str(uuid4())
+    saved = client.put(
+        f"/conversations/{conversation_id}",
+        json={
+            "title": "Garden plan",
+            "messages": [{"role": "user", "content": "Plan the garden"}],
+            "project_id": "general",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    main.memory_store.save_memory(
+        "garden preference",
+        "Native plants",
+        "planning",
+        source_conversation_id=conversation_id,
+    )
+
+    before = client.get("/memories?project_id=general").json()["memories"]
+    memory = next(item for item in before if item["key"] == "garden preference")
+    assert memory["source"] == "chat"
+    assert memory["source_conversation_id"] == conversation_id
+
+    deleted = client.delete(f"/conversations/{conversation_id}")
+    assert deleted.status_code == 200, deleted.text
+    after = client.get("/memories?project_id=general").json()["memories"]
+    memory = next(item for item in after if item["key"] == "garden preference")
+    assert memory["source"] == "chat"
+    assert memory["source_conversation_id"] is None
 
 
 def test_project_management_crud_and_general_is_protected(monkeypatch, tmp_path):
@@ -586,16 +631,24 @@ def test_memories_are_scoped_shared_and_preserved_when_project_is_deleted(
 
 def test_stream_endpoint_forwards_tokens_and_completion(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
+    conversation_id = str(uuid4())
+    captured = {}
 
-    async def fake_stream(**_kwargs):
+    async def fake_stream(**kwargs):
+        captured.update(kwargs)
         yield {"type": "token", "text": "Hello"}
         yield {"type": "done", "message": {"role": "assistant", "content": "Hello"}}
 
     monkeypatch.setattr(main, "stream_agent_loop", fake_stream)
     response = client.post(
-        "/chat/stream", json={"messages": [{"role": "user", "content": "Hi"}]}
+        "/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "Hi"}],
+            "conversation_id": conversation_id,
+        },
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert '"type": "token"' in response.text
     assert '"type": "done"' in response.text
+    assert captured["conversation_id"] == conversation_id
