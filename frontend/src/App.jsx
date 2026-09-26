@@ -8,6 +8,7 @@ import {
   Telemetry,
 } from "./components/SpatialUI";
 import MemoryLibrary from "./components/MemoryLibrary";
+import ProjectManager from "./components/ProjectManager";
 import { backendHeaders, readChatEvents, resolveBackend } from "./backendClient";
 import "./App.css";
 
@@ -64,6 +65,12 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(false);
   const [messages, setMessages] = useState([]);
   const [savedConversations, setSavedConversations] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(() => {
+    try { return window.localStorage.getItem("atlas.activeProject") || "general"; }
+    catch { return "general"; }
+  });
+  const [projectManagerOpen, setProjectManagerOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationSearchResults, setConversationSearchResults] = useState(null);
   const [conversationSearchRevision, setConversationSearchRevision] = useState(0);
@@ -105,6 +112,8 @@ export default function App() {
   const visibleConversations = conversationSearch.trim()
     ? conversationSearchResults || []
     : savedConversations;
+  const activeProject = projects.find((project) => project.id === activeProjectId)
+    || projects.find((project) => project.id === "general");
   const activeModel = installedModels.length
     ? selectedModel && installedModels.includes(selectedModel)
       ? selectedModel
@@ -168,6 +177,32 @@ export default function App() {
       }
     }
     loadConversations();
+    async function loadProjects() {
+      try {
+        const info = apiRef.current || await resolveBackend();
+        const response = await fetch(`${info.baseUrl}/projects`, {
+          headers: backendHeaders(info.token),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) {
+          const available = data.projects || [];
+          setProjects(available);
+          let selected = "general";
+          try { selected = window.localStorage.getItem("atlas.activeProject") || "general"; }
+          catch { /* General is the default for this session. */ }
+          if (!available.some((project) => project.id === selected)) {
+            selected = "general";
+            try { window.localStorage.setItem("atlas.activeProject", selected); }
+            catch { /* The current session still uses General. */ }
+          }
+          setActiveProjectId(selected);
+        }
+      } catch {
+        // The project list reloads automatically when Atlas reconnects.
+      }
+    }
+    loadProjects();
     async function loadWorkspaceFiles() {
       try {
         const info = apiRef.current || await resolveBackend();
@@ -456,6 +491,51 @@ export default function App() {
       setNotice(error.message);
     }
   }
+  function selectProject(projectId) {
+    if (busy || projectId === activeProjectId) return;
+    reset();
+    setActiveProjectId(projectId);
+    try { window.localStorage.setItem("atlas.activeProject", projectId); }
+    catch { /* The project remains selected until the app closes. */ }
+  }
+  async function createProject(name) {
+    const info = apiRef.current || await resolveBackend();
+    const response = await fetch(`${info.baseUrl}/projects`, {
+      method: "POST",
+      headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ name }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Could not create this project.");
+    const created = result.project;
+    setProjects((current) => [...current.filter((project) => project.id !== created.id), created]);
+    selectProject(created.id);
+    setProjectManagerOpen(false);
+    return true;
+  }
+  async function renameProject(projectId, name) {
+    const info = apiRef.current || await resolveBackend();
+    const response = await fetch(`${info.baseUrl}/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      headers: backendHeaders(info.token, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ name }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Could not rename this project.");
+    setProjects((current) => current.map((project) => project.id === projectId ? result.project : project));
+    return true;
+  }
+  async function deleteProject(projectId) {
+    const info = apiRef.current || await resolveBackend();
+    const response = await fetch(`${info.baseUrl}/projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+      headers: backendHeaders(info.token),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Could not delete this project.");
+    setProjects((current) => current.filter((project) => project.id !== projectId));
+    if (activeProjectId === projectId) selectProject("general");
+  }
   async function uploadFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -586,16 +666,23 @@ export default function App() {
           </span>
           <span className="version">{BUILD_VERSION}</span>
         </a>
-        <button
-          className="workspace-switch"
-          onClick={() => navigate("Workspace")}
-        >
-          <span className="workspace-avatar">P</span>
-          <span>
-            Personal workspace<small>Your space to think</small>
-          </span>
-          <Icon name="chevrons" size={15} />
-        </button>
+        <div className="workspace-switch">
+          <span className="workspace-avatar">{(activeProject?.name || "General").slice(0, 1).toUpperCase()}</span>
+          <label className="project-switch-label">
+            <span>Current project</span>
+            <select
+              aria-label="Current project"
+              value={activeProjectId}
+              onChange={(event) => selectProject(event.target.value)}
+              disabled={busy || !projects.length}
+            >
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </label>
+          <button className="project-manage-button" type="button" onClick={() => setProjectManagerOpen(true)} aria-label="Manage projects" title="Manage projects">
+            <Icon name="edit" size={14} />
+          </button>
+        </div>
         <button className="new-session" onClick={reset}>
           <Icon name="plus" size={17} />
           New session
@@ -697,7 +784,7 @@ export default function App() {
           <button className="profile" aria-label="Open system status" onClick={() => setTelemetry((v) => !v)}>
             <span className="profile-avatar">Y</span>
             <span>
-              Your personal space<small>Make room for possibility</small>
+              {activeProject?.name || "General"}<small>Current project</small>
             </span>
             <Icon name="activity" size={17} />
           </button>
@@ -715,7 +802,7 @@ export default function App() {
               <Icon name="panel" size={18} />
             </button>
             <span className="breadcrumb-divider" />
-            <span>Personal workspace</span>
+            <span>{activeProject?.name || "General"}</span>
             <Icon name="chevron" size={13} />
             <strong>{view}</strong>
           </div>
@@ -1235,6 +1322,15 @@ export default function App() {
           files={files}
           hardware={telemetryData}
           onClose={() => setTelemetry(false)}
+        />
+      )}
+      {projectManagerOpen && (
+        <ProjectManager
+          projects={projects}
+          onClose={() => setProjectManagerOpen(false)}
+          onCreate={createProject}
+          onRename={renameProject}
+          onDelete={deleteProject}
         />
       )}
     </div>
